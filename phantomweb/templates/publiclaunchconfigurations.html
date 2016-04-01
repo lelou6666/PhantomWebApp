@@ -1,0 +1,69 @@
+{% extends "../templates/base.html" %}
+{% block title %}Appliances - Phantom{% endblock %}
+{% block headcss %}
+    <link rel='stylesheet' type='text/css' media='all' href='/static/css/phantom_profile.css' />
+{% endblock %}
+
+{% block headscripts %}
+    <script type="text/javascript">
+    <!--
+    var csrf_token = "{{ csrf_token }}";
+    // -->
+    </script>
+    <script src="/static/js/phantom_common.js"></script>
+    <script src="/static/js/phantom_public_lc.js"></script>
+{% endblock %}
+{% block bodytag %}{% endblock %}
+{% block nimbus_body  %}
+
+<div class="modal hide fade" id="import-lc-modal">
+  <div class="modal-header">
+    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+    <h3>Import a Launch Configuration</h3>
+  </div>
+  <div class="modal-body">
+    <div id="alert-container">
+    </div>
+    <form class="form" id="add-lc-form">
+      <fieldset>
+        <div class="control-group" >
+          <div class="controls">
+            <label>Imported Launch Configuration Name</label>
+            <input id="import-lc-name" class="span6" type="text" placeholder="" />
+          </div>
+        </div>
+      </fieldset>
+    </form>
+    <div id="importing" class="progress progress-striped active" style="display: none">
+      <div class="bar" style="width: 100%"></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <a href="#" class="btn" data-dismiss="modal">Close</a>
+    <a href="#" class="btn btn-primary" id="import-launch-configuration">Import Launch Configuration</a>
+  </div>
+</div>
+
+<div class="container-fluid inner-container">
+  <h3>Phantom Appliances</h3>
+  <p>These appliances are launch configurations that have been shared by other Phantom Users.
+  If you click the Import button, they will be available in your
+  <a href="/phantom/launchconfig">Launch Configuration</a> page, ready for you to
+  use in your <a href="/phantom/domain">Domains</a>.
+  </p>
+  <table class="table" id="public_lc_table">
+  </table>
+  <p><a id="show-all-lc" href="#">Other Launch Configurations</a></p>
+</div>
+
+<div class="container-fluid inner-container">
+  <div class="row-fluid">
+    <div class="span2">
+      <div id="loading" class="progress progress-striped active">
+        <div class="bar" style="width: 100%"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

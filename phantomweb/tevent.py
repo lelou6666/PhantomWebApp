@@ -6,7 +6,10 @@ import traceback
 import threading
 from multiprocessing.pool import ThreadPool
 from multiprocessing import TimeoutError
+<<<<<<< HEAD
 
+=======
+>>>>>>> refs/remotes/nimbusproject/master
 TimeoutError = TimeoutError
 """
 Helper functions for working with stdlib threading library

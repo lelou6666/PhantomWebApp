@@ -12,19 +12,28 @@ ADMINS = (
     ('John', 'bresnaha@mcs.anl.gov'),
 )
 
-EMAIL_HOST      = 'zimbra.anl.gov'
+EMAIL_HOST = 'zimbra.anl.gov'
 EMAIL_HOST_PASSWORD = ''
 EMAIL_HOST_USER = 'bresnaha-mcs'
-EMAIL_PORT      = 465
-EMAIL_USE_TLS   = True
-DEFAULT_FROM_EMAIL  = 'bresnaha@mcs.anl.gov '
-SERVER_EMAIL    = 'bresnaha@mcs.anl.gov' 
+EMAIL_PORT = 465
+EMAIL_USE_TLS = True
+DEFAULT_FROM_EMAIL = 'bresnaha@mcs.anl.gov'
+SERVER_EMAIL = 'bresnaha@mcs.anl.gov'
+
+RABBITMQ_USERNAME = 'guest'
+RABBITMQ_PASSWORD = 'guest'
+RABBITMQ_HOSTNAME = 'localhost'
+RABBITMQ_PORT = '5672'
+
+NIMBUS_CLOUD_CLIENT_PATH = 'nimbus-cloud-client-022'
+
+LOGIN_REDIRECT_URL='/'
 
 MANAGERS = ADMINS
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3', # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
+        'ENGINE': 'django.db.backends.sqlite3',  # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
         'NAME': os.path.join(SITE_ROOT, 'djangotest.db'),                      # Or path to database file if using sqlite3.
         'USER': '',                      # Not used with sqlite3.
         'PASSWORD': '',                  # Not used with sqlite3.
@@ -32,6 +41,9 @@ DATABASES = {
         'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
     }
 }
+
+OPENTSDB_HOST='localhost'
+OPENTSDB_PORT='4242'
 
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
@@ -110,7 +122,7 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django_statsd.middleware.TimingMiddleware',
+    'django_statsd.middleware.StatsdMiddleware',
     # Uncomment the next line for simple clickjacking protection:
     # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
 )
@@ -139,6 +151,12 @@ INSTALLED_APPS = (
     'django.contrib.admindocs',
     'django_statsd',
     'phantomweb',
+    'tokenapi',
+)
+
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'tokenapi.backends.TokenBackend'
 )
 
 # A sample logging configuration. The only tangible logging
