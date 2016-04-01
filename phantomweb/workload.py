@@ -1,27 +1,62 @@
-import hashlib
-import boto
+from __future__ import absolute_import
+
+import json
+import logging
+import urlparse
+import celery
+
 from boto.ec2.autoscale import Tag
 from boto.exception import EC2ResponseError
 from boto.regioninfo import RegionInfo
-import logging
-import urlparse
+from celery.result import AsyncResult
+from phantomweb.tevent import Pool, TimeoutError
+import boto
 import boto.ec2.autoscale
-from phantomweb.models import LaunchConfigurationDB, HostMaxPairDB
+import statsd
+
+from phantomweb.celery import packer_build
+from phantomweb.models import LaunchConfiguration, LaunchConfigurationDB, HostMaxPairDB, \
+    PublicLaunchConfiguration, ImageGenerator, ImageGeneratorCloudConfig, ImageGeneratorScript, \
+    ImageBuild, ImageBuildArtifact, PackerCredential
 from phantomweb.phantom_web_exceptions import PhantomWebException
-from phantomweb.util import PhantomWebDecorator, LogEntryDecorator
-from phantomsql import phantom_get_default_key_name
+from phantomweb.util import PhantomWebDecorator, LogEntryDecorator, get_user_object
 
-import logging   # import the required logging module
 
-g_general_log = logging.getLogger('phantomweb.general')
+IAAS_TIMEOUT = 5
+log = logging.getLogger('phantomweb.general')
 
-# at some point this should come from some sort of DB
-g_instance_types = ["m1.small", "m1.large", "m1.xlarge"]
+OPENTSDB_METRICS = [
+    "df.1kblocks.free", "df.1kblocks.total", "df.1kblocks.used",
+    "df.inodes.free", "df.inodes.total", "df.inodes.used", "iostat.part.ios_in_progress",
+    "iostat.part.msec_read", "iostat.part.msec_total", "iostat.part.msec_weighted_total",
+    "iostat.part.msec_write", "iostat.part.read_merged", "iostat.part.read_requests",
+    "iostat.part.read_sectors", "iostat.part.write_merged", "iostat.part.write_requests",
+    "iostat.part.write_sectors", "net.sockstat.ipfragqueues", "net.sockstat.memory",
+    "net.sockstat.num_orphans", "net.sockstat.num_sockets", "net.sockstat.num_timewait",
+    "net.sockstat.sockets_inuse", "net.stat.tcp.abort", "net.stat.tcp.abort.failed",
+    "net.stat.tcp.congestion.recovery", "net.stat.tcp.delayedack",
+    "net.stat.tcp.failed_accept", "net.stat.tcp.memory.pressure",
+    "net.stat.tcp.memory.prune", "net.stat.tcp.packetloss.recovery",
+    "net.stat.tcp.reording", "net.stat.tcp.syncookies", "proc.net.bytes",
+    "proc.net.dropped", "proc.net.errs", "proc.net.packets", "proc.net.tcp",
+    "proc.kernel.entropy_avail", "proc.loadavg.15min", "proc.loadavg.1min",
+    "proc.loadavg.5min", "proc.loadavg.runnable", "proc.loadavg.total_threads",
+    "proc.meminfo.active", "proc.meminfo.anonpages", "proc.meminfo.bounce",
+    "proc.meminfo.buffers", "proc.meminfo.cached", "proc.meminfo.commitlimit",
+    "proc.meminfo.committed_as", "proc.meminfo.dirty", "proc.meminfo.highfree",
+    "proc.meminfo.hightotal", "proc.meminfo.inactive", "proc.meminfo.lowfree",
+    "proc.meminfo.lowtotal", "proc.meminfo.mapped", "proc.meminfo.memfree",
+    "proc.meminfo.memtotal", "proc.meminfo.nfs_unstable", "proc.meminfo.pagetables",
+    "proc.meminfo.slab", "tcollector.collector.lines_invalid",
+    "tcollector.collector.lines_received", "tcollector.collector.lines_sent",
+    "tcollector.reader.lines_collected", "tcollector.reader.lines_dropped"
+]
 
-#
-# we are only dealing with launch configurations that were made with the web app
-#
+
 def _get_launch_configuration(phantom_con, lc_db_object):
+    """
+    we are only dealing with launch configurations that were made with the web app
+    """
     lc_name = lc_db_object.name
     site_dict = {}
     host_vm_db_objs_a = HostMaxPairDB.objects.filter(launch_config=lc_db_object)
@@ -29,11 +64,17 @@ def _get_launch_configuration(phantom_con, lc_db_object):
         site_name = host_vm_db_obj.cloud_name
         shoe_horn_lc_name = "%s@%s" % (lc_name, site_name)
         try:
-            lcs = phantom_con.get_all_launch_configurations(names=[shoe_horn_lc_name,])
+            lcs = phantom_con.get_all_launch_configurations(names=[shoe_horn_lc_name, ])
         except Exception, ex:
-            lcs = []
+            raise PhantomWebException(
+                "Error communicating with Phantom REST.  %s might be misconfigured | %s" % (
+                shoe_horn_lc_name, str(ex)))
+
         if len(lcs) != 1:
-            raise PhantomWebException("Error communication with Phantom REST.  %s might be misconfigured | %s" % (shoe_horn_lc_name, str(ex)))
+            log.error(
+                "Received empty launch configuration list from Phantom REST.  %s might be misconfigured" % (
+                shoe_horn_lc_name, ))
+            continue
         lc = lcs[0]
         site_entry = {
             'cloud': site_name,
@@ -49,6 +90,7 @@ def _get_launch_configuration(phantom_con, lc_db_object):
 
     return site_dict
 
+<<<<<<< HEAD
 def _get_all_launch_configurations(phantom_con, username):
     all_lc_dict = {}
     lc_db_objects_a = LaunchConfigurationDB.objects.all(username=username)
@@ -60,217 +102,191 @@ def _get_all_launch_configurations(phantom_con, username):
 def _get_all_domains(phantom_con):
 
     asgs = phantom_con.get_all_groups()
+=======
+>>>>>>> refs/remotes/nimbusproject/master
 
-    return_asgs = {}
-    for a in asgs:
-        ent = {}
-        ent['name'] = a.name
-        ent['vm_size'] = a.desired_capacity
-        ent['lc_name'] = a.launch_config_name # .replace("[LaunchConfiguration:", "")
-        return_asgs[a.name] = ent
+########
 
-    return return_asgs
-
-@LogEntryDecorator
-def _get_phantom_con(userobj):
-    url = userobj.phantom_info.phantom_url
-    g_general_log.debug("Getting phantom can at %s" % (url))
-    uparts = urlparse.urlparse(url)
-    is_secure = uparts.scheme == 'https'
-    region = RegionInfo(endpoint=uparts.hostname)
-    con = boto.ec2.autoscale.AutoScaleConnection(aws_access_key_id=userobj._user_dbobject.access_key, aws_secret_access_key=userobj._user_dbobject.access_secret, is_secure=is_secure, port=uparts.port, region=region, validate_certs=False)
-    con.host = uparts.hostname
-    return con
-
-@LogEntryDecorator
-def _start_domain(phantom_con, domain_name, lc_name, vm_count, host_list_str, a_cloudname):
-
-    shoe_horn = "%s@%s" % (lc_name, a_cloudname)
-    try:
-        lc = phantom_con.get_all_launch_configurations(names=[shoe_horn,])
-    except EC2ResponseError, ec2re:
-        lc = None
-    if not lc:
-        raise PhantomWebException("The LC %s no longer exists." % (lc_name))
-
-    lc = lc[0]
-
-    policy_name_key = 'PHANTOM_DEFINITION'
-    policy_name = 'error_overflow_n_preserving'
-    ordered_clouds_key = 'clouds'
-    n_preserve_key = 'n_preserve'
-    n_preserve = vm_count
-
-    policy_tag = Tag(connection=phantom_con, key=policy_name_key, value=policy_name, resource_id=domain_name)
-    clouds_tag = Tag(connection=phantom_con, key=ordered_clouds_key, value=host_list_str, resource_id=domain_name)
-    npreserve_tag = Tag(connection=phantom_con, key=n_preserve_key, value=n_preserve, resource_id=domain_name)
-
-    tags = [policy_tag, clouds_tag, npreserve_tag]
-
-    asg = boto.ec2.autoscale.group.AutoScalingGroup(launch_config=lc, connection=phantom_con, group_name=domain_name, availability_zones=["us-east-1"], min_size=vm_count, max_size=vm_count, tags=tags)
-    phantom_con.create_auto_scaling_group(asg)
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def update_desired_size(request_params, userobj):
-    con = _get_phantom_con(userobj)
-
-    params = ['name', 'new_desired_size']
-    for p in params:
-        if p not in request_params:
-            return None
-    asg_name = request_params['name']
-
-    try:
-        asg_new_desired_size = int(request_params['new_desired_size'])
-    except:
-        e_msg = 'Please set the desired size to an integer, not %s' % (str(request_params['new_desired_size']))
-        g_general_log.error(e_msg)
-        raise PhantomWebException(e_msg)
-
-    g_general_log.debug("updating %s to be size %d" % (asg_name, asg_new_desired_size))
-
-    asgs = con.get_all_groups(names=[asg_name,])
-    if not asgs:
-        e_msg = "The domain %s does not exist." % (asg_name)
-        raise PhantomWebException(e_msg)
-    asgs[0].set_capacity(asg_new_desired_size)
-    
-    response_dict = {
-        'Success': True,
-    }
-    return response_dict
-
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def terminate_iaas_instance(request_params, userobj):
-
-    params = ['cloud','instance']
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-
-    cloud_name = request_params['cloud']
-    iaas_cloud = userobj.get_cloud(cloud_name)
-    instance = request_params['instance']
-
-    ec2conn = iaas_cloud.get_iaas_compute_con()
-    g_general_log.debug("User %s terminating the instance %s on %s" % (userobj._user_dbobject.access_key, instance, cloud_name))
-    ec2conn.terminate_instances(instance_ids=[instance,])
-
-    response_dict = {
-        'name': 'terminating',
-        'success': 'success',
-        'instance': instance,
-        'cloud': cloud_name
-    }
-    return response_dict
-
-#
-#  cloud site management pages
-#
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_sites_delete(request_params, userobj):
-    params = ['cloud',]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-
-    site_name = request_params['cloud']
-
-    userobj.delete_site(site_name)
-    userobj._load_clouds()
-    response_dict = {
-    }
-    return response_dict
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_sites_add(request_params, userobj):
-    params = ['cloud', "access", "secret", "keyname"]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-
-    site_name = request_params['cloud']
-    keyname = request_params['keyname']
-    access = request_params['access']
-    secret = request_params['secret']
-
-    userobj.add_site(site_name, access, secret, keyname)
-    response_dict = {
-    }
-    return response_dict
-
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_sites_load(request_params, userobj):
-    sites = userobj.get_clouds()
-    all_sites = userobj.get_possible_sites()
-
-    out_info = {}
-    for site_name in sites:
-        ci = sites[site_name]
-        ci_dict = {
-            'username': ci.username,
-            'access_key': ci.iaas_key,
-            'secret_key': ci.iaas_secret,
-            'keyname': ci.keyname,
-            'status': 0,
-            'status_msg': ""
-        }
-
-        ec2conn = ci.get_iaas_compute_con()
+# New implementation for the Phantom API
+def get_all_packer_credentials(username, clouds):
+    """get all packer credentials"""
+    packer_credentials_dict = {}
+    for cloud_name, cloud in clouds.iteritems():
+        packer_credentials_dict[cloud_name] = {}
         try:
-            keypairs = ec2conn.get_all_key_pairs()
-            keyname_list = [k.name for k in keypairs]
-            ci_dict['keyname_list'] = keyname_list
-            ci_dict['status_msg'] = ""
-        except Exception, boto_ex:
-            g_general_log.error("Error connecting to the service %s" % (str(boto_ex)))
-            ci_dict['keyname_list'] = []
-            ci_dict['status_msg'] = "Error communication with the specific cloud %s.  Please check your credentials." % (site_name)
-            ci_dict['status'] = 1
+            packer_credentials = PackerCredential.objects.get(username=username, cloud=cloud_name)
+            packer_credentials_dict[cloud_name]["canonical_id"] = packer_credentials.canonical_id
+            packer_credentials_dict[cloud_name]["usercert"] = packer_credentials.certificate
+            packer_credentials_dict[cloud_name]["userkey"] = packer_credentials.key
+            packer_credentials_dict[cloud_name]["openstack_username"] = packer_credentials.openstack_username
+            packer_credentials_dict[cloud_name]["openstack_password"] = packer_credentials.openstack_password
+            packer_credentials_dict[cloud_name]["openstack_project"] = packer_credentials.openstack_project
+        except PackerCredential.DoesNotExist:
+            pass
 
-        out_info[site_name] = ci_dict
+    return packer_credentials_dict
 
-    response_dict = {
-        'sites': out_info,
-        'all_sites': all_sites
-    }
-    return response_dict
 
-def _parse_param_name(needle, haystack, request_params, lc_dict):
-    ndx = haystack.find("." + needle)
-    if ndx < 0:
-        return lc_dict
-    site_name = haystack[:ndx]
-    val = request_params[haystack]
+def add_packer_credentials(username, cloud, nimbus_user_cert=None, nimbus_user_key=None, nimbus_canonical_id=None,
+        openstack_username=None, openstack_password=None, openstack_project=None):
+    try:
+        pc = PackerCredential.objects.get(username=username, cloud=cloud)
+        if nimbus_user_cert:
+            pc.certificate = nimbus_user_cert
+            pc.key = nimbus_user_key
+            pc.canonical_id = nimbus_canonical_id
+        elif openstack_username is not None:
+            pc.openstack_username = openstack_username
+            pc.openstack_password = openstack_password
+            pc.openstack_project = openstack_project
+    except PackerCredential.DoesNotExist:
+        if nimbus_user_cert is not None:
+            pc = PackerCredential.objects.create(username=username, cloud=cloud, certificate=nimbus_user_cert,
+                    key=nimbus_user_key, canonical_id=nimbus_canonical_id, openstack_username=" ", openstack_password=" ",
+                    openstack_project=" ")
+        elif openstack_username is not None:
+            if openstack_password is None:
+                openstack_password = " "
+            pc = PackerCredential.objects.create(username=username, cloud=cloud, certificate=" ",
+                    key=" ", canonical_id=" ", openstack_username=openstack_username,
+                    openstack_password=openstack_password, openstack_project=openstack_project)
 
-    if site_name in lc_dict:
-        entry = lc_dict[site_name]
+    pc.save()
+    return pc
+
+
+def get_all_keys(clouds):
+    """get all ssh keys from a dictionary of UserCloudInfo objects
+    """
+    pool = Pool(processes=10)
+    key_dict = {}
+
+    results = {}
+    for cloud_name, cloud in clouds.iteritems():
+        result = pool.apply_async(cloud.get_keys)
+        results[cloud_name] = result
+
+    pool.close()
+
+    for cloud_name, result in results.iteritems():
+        try:
+            key_dict[cloud_name] = result.get(IAAS_TIMEOUT)
+        except TimeoutError:
+            log.exception("Timed out getting keys from %s" % cloud_name)
+            key_dict[cloud_name] = []
+        except Exception:
+            log.exception("Unexpected error getting keys from %s" % cloud_name)
+            key_dict[cloud_name] = []
+
+    return key_dict
+
+
+def upload_key(cloud, name, key):
+    """upload an ssh key to iaas
+    """
+
+    cloud.upload_key(name, key)
+
+
+def create_launch_configuration(username, name, cloud_params, context_params, appliance=None):
+    lc = LaunchConfiguration.objects.create(name=name, username=username)
+
+    user_obj = get_user_object(username)
+    user_obj.create_dt(name, cloud_params, context_params, appliance)
+
+    lc.save()
+
+    return lc
+
+
+def update_launch_configuration(id, cloud_params, context_params, appliance=None):
+    lc = get_launch_configuration(id)
+    if lc is None:
+        raise PhantomWebException("Trying to update lc %s that doesn't exist?" % id)
+
+    username = lc.get('owner')
+    name = lc.get('name')
+    user_obj = get_user_object(username)
+    user_obj.create_dt(name, cloud_params, context_params, appliance)
+
+    return lc
+
+
+def get_all_launch_configurations(username, public=False):
+
+    if public is True:
+        public_lcs = PublicLaunchConfiguration.objects.all()
+        lcs = {}
+        for public_lc in public_lcs:
+            lcs[public_lc.launch_configuration.id] = {
+                'id': public_lc.launch_configuration.id,
+                'description': public_lc.description,
+            }
+
     else:
-        entry = {}
-    entry[needle] = val
-    lc_dict[site_name] = entry
+        lcs = {}
+        all_lcs = LaunchConfiguration.objects.filter(username=username)
+        for lc in all_lcs:
+            lcs[lc.id] = {
+                'id': lc.id,
+            }
+    return lcs
+
+
+def get_launch_configuration(id):
+
+    try:
+        lc = LaunchConfiguration.objects.get(id=id)
+    except LaunchConfiguration.DoesNotExist:
+        return None
+
+    lc_dict = {
+        "id": lc.id,
+        "name": lc.name,
+        "owner": lc.username,
+        "cloud_params": {}
+    }
+
+    user_obj = get_user_object(lc.username)
+    dt = user_obj.get_dt(lc.name)
+    if dt is None:
+        log.error("DT %s doesn't seem to be in DTRS, continuing anyway" % lc.name)
+        dt = {}
+    contextualization = dt.get('contextualization', {})
+
+    if contextualization:
+        userdata = contextualization.get("userdata")
+        method = contextualization.get("method")
+        run_list = contextualization.get("run_list")
+        attributes = contextualization.get("attributes")
+        if method == 'userdata' or userdata is not None:
+            lc_dict["contextualization_method"] = 'user_data'
+            lc_dict["user_data"] = userdata
+        elif method == 'chef':
+            lc_dict["contextualization_method"] = 'chef'
+            lc_dict["chef_runlist"] = run_list
+            lc_dict["chef_attributes"] = attributes
+        elif method is None:
+            lc_dict["contextualization_method"] = 'none'
+
+    appliance = dt.get('appliance')
+    if appliance:
+        lc_dict['appliance'] = appliance
+
+    for cloud, mapping in dt.get('mappings', {}).iteritems():
+
+        lc_dict["cloud_params"][cloud] = {
+            "max_vms": mapping.get('max_vms'),
+            "common": mapping.get('common'),
+            "rank": mapping.get('rank'),
+            "image_id": mapping.get("iaas_image"),
+            "instance_type": mapping.get("iaas_allocation")
+        }
 
     return lc_dict
 
-#
-#  cloud launch config functions
-#
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_lc_load(request_params, userobj):
-    global g_instance_types
 
-    clouds_d = userobj.get_clouds()
-
-    phantom_con = _get_phantom_con(userobj)
-
+<<<<<<< HEAD
     all_lc_dict = _get_all_launch_configurations(phantom_con, userobj._user_dbobject.access_key)
     iaas_info = {}
     for cloud_name in clouds_d:
@@ -316,69 +332,40 @@ def phantom_lc_save(request_params, userobj):
     lc_db_object = LaunchConfigurationDB.objects.filter(name=lc_name, username=userobj._user_dbobject.access_key)
     if not lc_db_object:
         lc_db_object = LaunchConfigurationDB.objects.create(name=lc_name, username=userobj._user_dbobject.access_key)
-    else:
-        lc_db_object = lc_db_object[0]
-    lc_db_object.save()
-
-    phantom_con = _get_phantom_con(userobj)
-
+=======
+def get_launch_configuration_object(id):
     try:
-        sites_dict = userobj.get_clouds()
-        for site_name in lc_dict:
+        lc = LaunchConfiguration.objects.get(id=id)
+    except LaunchConfiguration.DoesNotExist:
+        return None
+    return lc
 
-            if site_name not in sites_dict:
-                raise PhantomWebException("The site %s is not configured." % (site_name))
-            site_ent = sites_dict[site_name]
-            if not site_ent.keyname:
-                raise PhantomWebException("There is no key configured for the site %s.  Please see the Edit Cloud page." % (site_name))
 
-            lc_conf_name = "%s@%s" % (lc_name, site_name)
-            entry = lc_dict[site_name]
+def get_launch_configuration_by_name(username, name):
+    lcs = LaunchConfiguration.objects.filter(name=name, username=username)
+    if len(lcs) == 0:
+        return None
+>>>>>>> refs/remotes/nimbusproject/master
+    else:
+        return lcs[0]
 
-            # check for valid image
-            cloud_object = userobj.get_cloud(site_name)
-            ec2conn = cloud_object.get_iaas_compute_con()
-            try:
-                tmp_img = ec2conn.get_all_images(image_ids=[entry['image_id']])
-            except EC2ResponseError, boto_image_ex:
-                tmp_img = None
-            if not tmp_img:
-                raise PhantomWebException("No such image %s for cloud %s" % (entry['image_id'], site_name))
 
-            try:
-                # we probably need to list everything with the base name and delete it
-                phantom_con.delete_launch_configuration(lc_conf_name)
-            except Exception, boto_del_ex:
-                # delete in case this is an update
-                pass
-            lc = boto.ec2.autoscale.launchconfig.LaunchConfiguration(phantom_con, name=lc_conf_name, image_id=entry['image_id'], key_name=site_ent.keyname, security_groups=['default'], instance_type=entry['instance_type'])
-            phantom_con.create_launch_configuration(lc)
+def remove_launch_configuration(username, lc_id):
+    try:
+        lc = LaunchConfiguration.objects.get(id=lc_id)
+    except LaunchConfiguration.DoesNotExist:
+        raise PhantomWebException("Could not delete launch configuration %s. Doesn't exist." % lc_id)
 
-            is_common = entry['common'].lower() == "true"
-            host_max_db_a = HostMaxPairDB.objects.filter(cloud_name=site_name, launch_config=lc_db_object)
-            if host_max_db_a:
-                host_max_db = host_max_db_a[0]
-            else:
-                host_max_db = HostMaxPairDB.objects.create(cloud_name=site_name, max_vms=entry['max_vm'], launch_config=lc_db_object, rank=int(entry['rank']), common_image=is_common)
-            host_max_db.save()
-    except Exception, boto_ex:
-        g_general_log.error("Error adding the launch configuration %s | %s" % (lc_name, str(boto_ex)))
-        raise PhantomWebException(str(boto_ex))
+    user_obj = get_user_object(lc.username)
+    try:
+        user_obj.remove_dt(lc.name)
+    except Exception:
+        log.exception("Couldn't delete dt %s" % lc.name)
 
-    response_dict = {}
-    
-    return response_dict
+    lc.delete()
 
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_lc_delete(request_params, userobj):
-    params = ["name",]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
 
-    lc_name = request_params['name']
-
+<<<<<<< HEAD
     phantom_con = _get_phantom_con(userobj)
     try:
         lcs = phantom_con.get_all_launch_configurations()
@@ -411,150 +398,431 @@ def phantom_lc_delete(request_params, userobj):
             error_message = error_message + "Error deleting the host entry: %s" % (str(host_db_del))
             g_general_log.warn(error_message)
     lc_db_object.delete()
+=======
+def get_host_max_pair(launch_config, cloud_name):
+    hmp = HostMaxPairDB.objects.filter(cloud_name=cloud_name, launch_config=launch_config)
+    if len(hmp) == 0:
+        return None
+    else:
+        return hmp[0]
+>>>>>>> refs/remotes/nimbusproject/master
 
-    if error_message:
-        raise PhantomWebException(error_message)
 
-    response_dict = {}
+def set_host_max_pair(launch_config, cloud_name, max_vms=-1, rank=0, common_image=False):
+    host_max_pairs = HostMaxPairDB.objects.filter(cloud_name=cloud_name, launch_config=launch_config)
+    if len(host_max_pairs) == 0:
+        host_max_pair = HostMaxPairDB.objects.create(cloud_name=cloud_name,
+            launch_config=launch_config, max_vms=max_vms, rank=rank, common_image=common_image)
+    else:
+        host_max_pair = host_max_pairs[0]
+        host_max_pair.update(cloud_name=cloud_name,
+            launch_config=launch_config, max_vms=max_vms, rank=rank, common_image=common_image)
 
-    return response_dict
+    host_max_pair.save()
+    return host_max_pair
 
 
+def get_all_domains(username):
+    user_obj = get_user_object(username)
+    domains = user_obj.get_all_domains(username)
 
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_domain_load(request_params, userobj):
-    phantom_con = _get_phantom_con(userobj)
+    return_domains = []
+    for d in domains:
+        ent = user_obj.get_domain(username, d)
+        return_domains.append(ent)
 
+<<<<<<< HEAD
     domains = _get_all_domains(phantom_con)
     all_lc_dict = _get_all_launch_configurations(phantom_con, userobj._user_dbobject.access_key)
-
-    lc_names = []
-    for name in all_lc_dict.keys():
-        lc_names.append(name)
-
-    response_dict = {
-        'launchconfigs': lc_names,
-        'domains': domains
-        }
-
-    return response_dict
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_domain_start(request_params, userobj):
-    params = ['name', "lc_name", "vm_count", ]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-    domain_name = request_params["name"]
-    lc_name = request_params["lc_name"]
-    vm_count = request_params["vm_count"]
+=======
+    return return_domains
+>>>>>>> refs/remotes/nimbusproject/master
 
 
+def get_domain(username, id):
+    user_obj = get_user_object(username)
+    return user_obj.get_domain(username, id)
+
+
+def get_domain_instances(username, id):
+    user_obj = get_user_object(username)
+    return user_obj.get_domain_instances(username, id)
+
+
+<<<<<<< HEAD
     lc_db_object = LaunchConfigurationDB.objects.filter(name=lc_name, username=userobj._user_dbobject.access_key)
     if not lc_db_object or len(lc_db_object) < 1:
         raise PhantomWebException("The launch configuration %s is not known to the web application." % (lc_name))
-
-    lc_db_object = lc_db_object[0]
-    host_vm_dbs = HostMaxPairDB.objects.filter(launch_config=lc_db_object)
-
-    sorted_by_rank = sorted(host_vm_dbs, key=lambda hm: hm.rank)
-
-    # we need just any cloud name from the list to properly fake the AWS lc name
-    a_cloudname = None
-    ordered_hosts = ""
-    delim = ""
-    for hm in sorted_by_rank:
-        ordered_hosts = ordered_hosts + delim + "%s:%d" % (hm.cloud_name, hm.max_vms)
-        a_cloudname = hm.cloud_name
-        delim = ","
+=======
+def get_domain_instance(username, id, instance_id):
+    user_obj = get_user_object(username)
+    instances = user_obj.get_domain_instances(username, id)
+    wanted_instance = None
+    for instance in instances:
+        if instance.get('id') == instance_id:
+            wanted_instance = instance
+            break
+    return wanted_instance
+>>>>>>> refs/remotes/nimbusproject/master
 
 
-    phantom_con = _get_phantom_con(userobj)
-    _start_domain(phantom_con, domain_name, lc_name, vm_count, ordered_hosts, a_cloudname)
-
-    response_dict = {}
-    return response_dict
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_domain_resize(request_params, userobj):
-    params = ['name', "vm_count"]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-
-    domain_name = request_params["name"]
-    new_size = request_params["vm_count"]
-
-    try:
-        phantom_con = _get_phantom_con(userobj)
-        asg = phantom_con.get_all_groups(names=[domain_name,])
-        if not asg:
-            raise PhantomWebException("domain %s not found" % (domain_name))
-        asg = asg[0]
-        asg.set_capacity(new_size)
-    except PhantomWebException:
-        raise
-    except Exception, ex:
-        raise PhantomWebException(str(ex))
-    response_dict = {}
-    return response_dict
+def get_domain_by_name(username, name):
+    domains = get_all_domains(username)
+    for domain in domains:
+        if domain.get('name') == name:
+            return domain
+    return None
 
 
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_domain_terminate(request_params, userobj):
-    params = ['name',]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
+def terminate_domain_instance(username, domain_id, instance_id):
+    user_obj = get_user_object(username)
+    instance_to_terminate = get_domain_instance(username, domain_id, instance_id)
+    if instance_to_terminate is None:
+        raise PhantomWebException("No instance %s available to terminate" % instance_id)
 
-    domain_name = request_params["name"]
+    instance_iaas_id = instance_to_terminate.get('iaas_instance_id')
+    if instance_iaas_id is None:
+        raise PhantomWebException("Instance %s has no iaas ID" % instance_id)
 
-    g_general_log.debug("deleting %s" % (domain_name))
-    phantom_con = _get_phantom_con(userobj)
-    phantom_con.delete_auto_scaling_group(domain_name)
+    cloud_name = instance_to_terminate.get('cloud')
+    cloud_name = cloud_name.split("/")[-1]
 
-    response_dict = {}
-    return response_dict
+    iaas_cloud = user_obj.get_cloud(cloud_name)
+    iaas_connection = iaas_cloud.get_iaas_compute_con()
 
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_instance_terminate(request_params, userobj):
-    params = ['instance', "adjust"]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
+    log.debug("User %s terminating the instance %s on %s" % (username, instance_iaas_id, cloud_name))
 
-    instance_id = request_params["instance"]
-    adjust = request_params["adjust"]
-    adjust = adjust.lower() == "true"
+    timer = statsd.Timer('phantomweb')
+    timer.start()
 
-    g_general_log.debug("deleting %s" % (instance_id))
-    phantom_con = _get_phantom_con(userobj)
-
-    phantom_con.terminate_instance(instance_id, decrement_capacity=adjust)
-
-    response_dict = {}
-    return response_dict
-
-@PhantomWebDecorator
-@LogEntryDecorator
-def phantom_domain_details(request_params, userobj):
-    params = ['name',]
-    for p in params:
-        if p not in request_params:
-            raise PhantomWebException('Missing parameter %s' % (p))
-
-    domain_name = request_params["name"]
-
-    phantom_con = _get_phantom_con(userobj)
-
-    g_general_log.debug("Looking up domain name %s for user %s" % (str(domain_name), userobj._user_dbobject.access_key))
+    timer_cloud = statsd.Timer('phantomweb')
+    timer_cloud.start()
 
     try:
+        iaas_connection.terminate_instances(instance_ids=[instance_iaas_id, ])
+    except Exception:
+        log.exception("Couldn't terminate %s" % instance_iaas_id)
+    timer.stop('terminate_instances.timing')
+    timer_cloud.stop('terminate_instances.%s.timing' % cloud_name)
+
+    return
+
+
+def remove_domain(username, id):
+    user_obj = get_user_object(username)
+    return user_obj.remove_domain(username, id)
+
+
+def create_domain(username, name, parameters):
+    user_obj = get_user_object(username)
+    lc_name = parameters.get('lc_name')
+    lc = get_launch_configuration_by_name(username, lc_name)
+    if lc is None:
+        raise PhantomWebException("No launch configuration named %s. Can't make domain" % lc_name)
+    lc_dict = get_launch_configuration(lc.id)
+    clouds = []
+    for cloud_name, cloud in lc_dict.get('cloud_params', {}).iteritems():
+        cloud = {
+            'site_name': cloud_name,
+            'rank': cloud.get('rank'),
+            'size': cloud.get('max_vms'),
+        }
+        clouds.append(cloud)
+
+    parameters['clouds'] = clouds
+    return user_obj.add_domain(username, name, parameters)
+
+
+def modify_domain(username, id, parameters):
+    user_obj = get_user_object(username)
+    return user_obj.reconfigure_domain(username, id, parameters)
+
+
+def get_sensors(username):
+    return OPENTSDB_METRICS
+
+def get_all_image_generators(username):
+    image_generators = []
+    all_image_generators = ImageGenerator.objects.filter(username=username)
+    for ig in all_image_generators:
+        image_generators.append(ig.id)
+    return image_generators
+
+
+def create_image_generator(username, name, cloud_params, script):
+    image_generator = ImageGenerator.objects.create(name=name, username=username)
+    image_generator.save()
+    for cloud_name in cloud_params:
+        params = cloud_params[cloud_name]
+        image_name = params.get("image_id")
+        instance_type = params.get("instance_type")
+        ssh_username = params.get("ssh_username")
+        common_image = params.get("common")
+        new_image_name = params.get("new_image_name")
+        public_image = params.get("public_image")
+
+        if image_name is None:
+            raise PhantomWebException("You must provide an image_id in the cloud parameters")
+        if instance_type is None:
+            raise PhantomWebException("You must provide an instance_type in the cloud parameters")
+        if ssh_username is None:
+            raise PhantomWebException("You must provide an ssh_username in the cloud parameters")
+        if common_image is None:
+            raise PhantomWebException("You must provide a common boolean in the cloud parameters")
+        if new_image_name is None:
+            raise PhantomWebException("You must provide a new_image_name in the cloud parameters")
+        if public_image is None:
+            raise PhantomWebException("You must provide a public_image boolean in the cloud parameters")
+
+        igcc = ImageGeneratorCloudConfig.objects.create(
+            image_generator=image_generator,
+            cloud_name=cloud_name,
+            image_name=image_name,
+            ssh_username=ssh_username,
+            instance_type=instance_type,
+            common_image=common_image,
+            new_image_name=new_image_name,
+            public_image=public_image)
+        igcc.save()
+
+        igs = ImageGeneratorScript.objects.create(
+            image_generator=image_generator,
+            script_content=script)
+        igs.save()
+
+    return image_generator
+
+
+def get_image_generator(id):
+    try:
+        image_generator = ImageGenerator.objects.get(id=id)
+    except ImageGenerator.DoesNotExist:
+        return None
+
+    image_generator_dict = {
+        "id": image_generator.id,
+        "name": image_generator.name,
+        "owner": image_generator.username,
+        "cloud_params": {},
+        "script": None,
+    }
+
+    cloud_configs = image_generator.imagegeneratorcloudconfig_set.all()
+    for cc in cloud_configs:
+        cloud_name = cc.cloud_name
+        image_generator_dict["cloud_params"][cloud_name] = {
+            "image_id": cc.image_name,
+            "ssh_username": cc.ssh_username,
+            "instance_type": cc.instance_type,
+            "common": cc.common_image,
+            "new_image_name": cc.new_image_name,
+            "public_image": cc.public_image
+        }
+
+    scripts = image_generator.imagegeneratorscript_set.all()
+    if len(scripts) != 1:
+        raise PhantomWebException("There should be only 1 script, not %d" % len(scripts))
+
+    image_generator_dict["script"] = scripts[0].script_content
+
+    return image_generator_dict
+
+
+def get_image_generator_by_name(username, name):
+    image_generators = ImageGenerator.objects.filter(name=name, username=username)
+    if len(image_generators) == 0:
+        return None
+    else:
+        return image_generators[0]
+
+
+def modify_image_generator(id, image_generator_params):
+    try:
+        image_generator = ImageGenerator.objects.get(id=id)
+    except ImageGenerator.DoesNotExist:
+        raise PhantomWebException("Trying to update image generator %s that doesn't exist?" % id)
+
+    # Required params: name, script, cloud_params
+    name = image_generator_params.get("name")
+    if name is None:
+        raise PhantomWebException("Must provide 'name' element to update an image generator")
+
+    script = image_generator_params.get("script")
+    if script is None:
+        raise PhantomWebException("Must provide 'script' element to update an image generator")
+
+    cloud_params = image_generator_params.get("cloud_params")
+    if cloud_params is None:
+        raise PhantomWebException("Must provide 'cloud_params' element to update an image generator")
+
+    image_generator.name = name
+    image_generator.save()
+
+    scripts = image_generator.imagegeneratorscript_set.all()
+    if len(scripts) != 1:
+        raise PhantomWebException("There should be only 1 script, not %d" % len(scripts))
+    scripts[0].script_content = script
+    scripts[0].save()
+
+    cloud_configs = image_generator.imagegeneratorcloudconfig_set.all()
+    for cc in cloud_configs:
+        cc.delete()
+
+    for cloud_name in cloud_params:
+        params = cloud_params[cloud_name]
+        image_name = params.get("image_id")
+        instance_type = params.get("instance_type")
+        ssh_username = params.get("ssh_username")
+        common_image = params.get("common")
+        new_image_name = params.get("new_image_name")
+
+        if image_name is None:
+            raise PhantomWebException("You must provide an image_id in the cloud parameters")
+        if instance_type is None:
+            raise PhantomWebException("You must provide an instance_type in the cloud parameters")
+        if ssh_username is None:
+            raise PhantomWebException("You must provide an ssh_username in the cloud parameters")
+        if common_image is None:
+            raise PhantomWebException("You must provide a common boolean in the cloud parameters")
+        if new_image_name is None:
+            raise PhantomWebException("You must provide a new_image_name in the cloud parameters")
+
+        igcc = ImageGeneratorCloudConfig.objects.create(
+            image_generator=image_generator,
+            cloud_name=cloud_name,
+            image_name=image_name,
+            ssh_username=ssh_username,
+            instance_type=instance_type,
+            common_image=common_image,
+            new_image_name=new_image_name)
+        igcc.save()
+
+    return get_image_generator(id)
+
+
+def remove_image_generator(id):
+    try:
+        image_generator = ImageGenerator.objects.get(id=id)
+    except ImageGenerator.DoesNotExist:
+        raise PhantomWebException("Could not delete image generator %s. Doesn't exist." % id)
+
+    image_generator.delete()
+
+
+def create_image_build(username, image_generator, additional_credentials={}):
+    user_obj = get_user_object(username)
+    all_clouds = user_obj.get_clouds()
+    sites = {}
+    credentials = {}
+    for site in image_generator["cloud_params"]:
+        try:
+            cloud = all_clouds[site]
+            sites[site] = cloud.site_desc
+            credentials[site] = {
+                "access_key": cloud.iaas_key,
+                "secret_key": cloud.iaas_secret,
+            }
+
+            if sites[site]["type"] == "nimbus":
+                try:
+                    packer_credentials = PackerCredential.objects.get(username=username, cloud=site)
+                    credentials[site]["canonical_id"] = packer_credentials.canonical_id
+                    credentials[site]["usercert"] = packer_credentials.certificate
+                    credentials[site]["userkey"] = packer_credentials.key
+                except PackerCredential.DoesNotExist:
+                    raise PhantomWebException("Could not find extra Nimbus credentials for image generation.")
+            elif sites[site]["type"] == "openstack":
+                try:
+                    packer_credentials = PackerCredential.objects.get(username=username, cloud=site)
+                    credentials[site]["openstack_username"] = packer_credentials.openstack_username
+                    credentials[site]["openstack_password"] = packer_credentials.openstack_password
+                    credentials[site]["openstack_project"] = packer_credentials.openstack_project
+                except PackerCredential.DoesNotExist:
+                    raise PhantomWebException("Could not find extra OpenStack credentials for image generation.")
+                if site in additional_credentials:
+                    openstack_password = additional_credentials[site].get("openstack_password")
+                    if openstack_password is not None:
+                        credentials[site]["openstack_password"] = openstack_password
+        except KeyError:
+            raise PhantomWebException("Could not get cloud %s" % site)
+
+    result = packer_build.delay(image_generator, sites, credentials)
+
+    image_build = ImageBuild.objects.create(
+        image_generator_id=image_generator["id"],
+        celery_task_id=result.id,
+        status='submitted',
+        returncode=-1,
+        full_output="",
+        cloud_name=site,
+        owner=username)
+    image_build.save()
+
+    return {"id": image_build.id, "ready": result.ready(), "owner": username}
+
+
+def get_all_image_builds(username, image_generator_id):
+    image_builds = []
+    all_image_builds = ImageBuild.objects.filter(owner=username, image_generator_id=image_generator_id)
+    for ib in all_image_builds:
+        image_builds.append(ib.id)
+    return image_builds
+
+
+def get_image_build(username, image_build_id):
+    try:
+        image_build = ImageBuild.objects.get(id=image_build_id, owner=username)
+    except ImageBuild.DoesNotExist:
+        raise PhantomWebException("Could not find image build %s. Doesn't exist." % image_build_id)
+
+    ret = {"id": image_build.id, "owner": username, "cloud_name": image_build.cloud_name}
+    if image_build.status == "successful":
+        ret["ready"] = True
+    elif image_build.status == "submitted":
+        result = AsyncResult(image_build.celery_task_id)
+        ready = result.ready()
+        ret["ready"] = ready
+        if ready:
+            if result.successful():
+                image_build.returncode = result.result["returncode"]
+                if image_build.returncode == 0:
+                    image_build.status = "successful"
+                else:
+                    image_build.status = "failed"
+
+                for cloud_name in result.result["artifacts"]:
+                    image_build_artifact = ImageBuildArtifact.objects.create(
+                        image_build_id=image_build.id,
+                        cloud_name=cloud_name,
+                        image_name=result.result["artifacts"][cloud_name])
+                    image_build_artifact.save()
+
+                image_build.full_output = result.result["full_output"]
+                image_build.save()
+            else:
+                image_build.status = "failed"
+                image_build.returncode = -1
+                image_build.full_output = str(result.result)
+                image_build.save()
+
+    ret["status"] = image_build.status
+    if image_build.status != "submitted":
+        ret["returncode"] = image_build.returncode
+        ret["full_output"] = image_build.full_output
+        ret["artifacts"] = {}
+        try:
+            artifacts = ImageBuildArtifact.objects.filter(image_build_id=image_build_id)
+            for artifact in artifacts:
+                ret["artifacts"][artifact.cloud_name] = artifact.image_name
+        except ImageBuildArtifact.DoesNotExist:
+            raise PhantomWebException("Could not find image build artifact for image build id %s. Doesn't exist." % image_build_id)
+
+    return ret
+
+
+def remove_image_build(username, image_build_id):
+    try:
+<<<<<<< HEAD
         asgs = phantom_con.get_all_groups(names=[domain_name,])
     except Exception, ex:
         raise PhantomWebException("There was a problem finding the domain %s: %s" % (domain_name, str(ex)))
@@ -617,5 +885,19 @@ def phantom_domain_details(request_params, userobj):
         'domain_size': asg.desired_capacity
     }
     return response_dict
+=======
+        image_build = ImageBuild.objects.get(id=image_build_id, owner=username)
+    except ImageBuild.DoesNotExist:
+        raise PhantomWebException("Could not find image build %s. Doesn't exist." % image_build_id)
+>>>>>>> refs/remotes/nimbusproject/master
 
+    image_build.delete()
 
+#
+#  cloud site management pages
+#
+
+@PhantomWebDecorator
+@LogEntryDecorator
+def phantom_get_sites(request_params, userobj, details=False):
+    return userobj.get_possible_sites(details=details)

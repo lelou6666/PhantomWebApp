@@ -1,14 +1,18 @@
 {% extends "../templates/base.html" %}
 {% load url from future %}
-{% block headscripts %}
-    <script src="/static/js/phantom.js"></script>
-{% endblock %}
+{% block headscripts %} {% endblock %}
 
 {% block nimbus_body %}
 
 {% if form.errors %}
-<p>Your username and password didn't match. Please try again.</p>
+{% for key, err in form.errors.items %}
+<div class="alert alert-error">
+  {{ err.as_text|cut:"* " }}
+</div>
+{% endfor %}
 {% endif %}
+
+<p>Log in with your Phantom username and password.</p>
 
 <form method="post" action="{% url 'django.contrib.auth.views.login' %}">
 {% csrf_token %}
@@ -23,10 +27,8 @@
 </tr>
 </table>
 
-<input type="submit" value="login" />
+<input type="submit" class="btn" value="login" />
 <input type="hidden" name="next" value="{{ next }}" />
 </form>
 <p><a href="/accounts/reset_password/">Forgot password</a></p>
-
-
 {% endblock %}

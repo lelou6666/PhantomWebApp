@@ -1,8 +1,70 @@
+.sidebar-nav {
+    padding: 9px 0;
+}
+
+.inner-container {
+    padding: 0;
+}
+
+#details-nav {
+  border-bottom: 1px solid #e3e3e3;
+}
+
+@media (min-width: 768px) {
+    .domain-well {
+        min-height: 400px;
+    }
+}
+
+span.domain_sensor_tag {
+    background-color: #d9edf7;
+}
+
+#phantom_instance_context_menu {
+    display: none;
+}
+
+#phantom_details_button_div {
+    display: none;
+}
+
+#phantom_domain_loading_image {
+    display: none;
+}
+
+#loading_details {
+    height: 23px;
+}
+
+#phantom_details_loading_image {
+    float: right;
+    display: none;
+}
+
+#details_table_container {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+#phantom_domain_filter_list {
+    height: 23px;
+    width: 105px;
+    font-size: 11px;
+    margin: 0;
+}
+
 #phantom_domain_content
 {
     display: table;
-    width: 900px;
+    /*width: 900px;*/
     height: 500px;
+}
+
+#phantom_domain_sensors_label
+{
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 5px;
 }
 
 #phantom_domain_status_bar_div
@@ -10,10 +72,50 @@
     height: 25px;
 }
 
+#phantom_domain_list_pane
+{
+    float: left;
+    position: relative;
+    overflow: hidden;
+    width: 12%%;
+    height: 410px;
+    margin: 4px;
+    margin-left: 0px;
+    margin-right: 1px;
+    padding-left: 0px;
+    padding-right: 0px;
+    padding-top: 0px;
+}
+
+#phantom_domain_list_domains
+{
+    height: 400px;
+    overflow: hidden;
+    padding: 4px;
+    margin: -5px -20px -5px -5px;
+}
+
+#phantom_domain_button_add_div
+{
+    padding-top: 0;
+}
+
+#xphantom_domain_button_add
+{
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 #phantom_domain_main_combined_pane
 {
     float: left;
     position: relative;
+    width: 38%;
+}
+
+.phantom_domain_de_pref {
+    display: none;
 }
 
 .phantom_domain_section_div
@@ -34,7 +136,7 @@
 .phantom_domain_label
 {
     display: inline-block;
-    width: 40%;
+    width: 45%;
 }
 
 .phantom_domain_value
@@ -67,12 +169,12 @@
 #phantom_domain_details_pane
 {
     position: relative;
-    float: right;
+    float: left;
+    width: 41%;
 }
 
 #phantom_domain_details_filter_div
 {
-    padding-bottom: 5px;
 }
 
 
@@ -84,26 +186,21 @@
 .phantom_domain_form_pane
 {
     border: solid;
-    border-color: black;
+    border-color: #AAA;
     border-width: 1px;
     padding: 10px;
-    margin: 4px;
     height: 400px;
-    width: 45%;
-    margin-left: 5px;
-    margin-right: 5px;
+    margin: 4px;
+    margin-left: 0px;
+    margin-right: 1px;
 }
 
 .phantom_domain_control_buttons
 {
-    margin-left: 75px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
-#phantom_domain_list_domains
-{
-    width: 400px;
-    height: 200px;
-}
 
 .phantom_domain_combo
 {
@@ -144,7 +241,7 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    min-width: 100px;
+    width: 190px;
     z-index: 10000;
 }
 
@@ -165,16 +262,15 @@
 {
     color: #fffbef;
     display: inline-block;
-    padding: 8px;
+    padding: 6px;
     text-decoration: none;
-    width: 80%;
     text-align: center;
 }
 
 #phantom_domain_details_list_div
 {
     overflow-y: scroll;
-    height: 80%;
+    height: 330px;
     background-color: #f6f6ff;
 }
 
