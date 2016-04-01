@@ -21,7 +21,12 @@ from phantomweb.workload import phantom_get_sites, get_all_launch_configurations
     terminate_domain_instance, get_sensors, remove_launch_configuration, \
     get_launch_configuration_object, get_all_keys, upload_key, get_all_image_generators, create_image_generator, \
     get_image_generator, get_image_generator_by_name, modify_image_generator, remove_image_generator, \
+<<<<<<< HEAD
     create_image_build, get_image_build, get_all_image_builds, remove_image_build
+=======
+    create_image_build, get_image_build, get_all_image_builds, remove_image_build, get_all_packer_credentials, \
+    add_packer_credentials
+>>>>>>> refs/remotes/nimbusproject/master
 
 log = logging.getLogger('phantomweb.api.dev')
 
@@ -367,6 +372,7 @@ def credentials(request):
         details = str_to_bool(request.GET.get('details', 'false'))
         if details is True:
             keys = get_all_keys(all_clouds)
+            packer_credentials = get_all_packer_credentials(request.user.username, all_clouds)
 
         response_list = []
         for cloud in all_clouds.values():
@@ -380,7 +386,21 @@ def credentials(request):
             }
             if details is True:
                 credentials_dict["available_keys"] = keys[cloud.cloudname]
+                packer_cloud_creds = packer_credentials[cloud.cloudname]
+                if "usercert" in packer_cloud_creds:
+                    credentials_dict["nimbus_user_cert"] = packer_cloud_creds["usercert"]
+                if "userkey" in packer_cloud_creds:
+                    credentials_dict["nimbus_user_key"] = packer_cloud_creds["userkey"]
+                if "canonical_id" in packer_cloud_creds:
+                    credentials_dict["nimbus_canonical_id"] = packer_cloud_creds["canonical_id"]
+                if "openstack_username" in packer_cloud_creds:
+                    credentials_dict["openstack_username"] = packer_cloud_creds["openstack_username"]
+                if "openstack_password" in packer_cloud_creds:
+                    credentials_dict["openstack_password"] = packer_cloud_creds["openstack_password"]
+                if "openstack_project" in packer_cloud_creds:
+                    credentials_dict["openstack_project"] = packer_cloud_creds["openstack_project"]
             response_list.append(credentials_dict)
+        log.info(response_list)
         h = HttpResponse(json.dumps(response_list), mimetype='application/javascript')
     elif request.method == "POST":
         try:
@@ -397,6 +417,12 @@ def credentials(request):
         access_key = content["access_key"]
         secret_key = content["secret_key"]
         key_name = content["key_name"]
+        nimbus_user_cert = content.get("nimbus_user_cert")
+        nimbus_user_key = content.get("nimbus_user_key")
+        nimbus_canonical_id = content.get("nimbus_canonical_id")
+        openstack_username = content.get("openstack_username")
+        openstack_password = content.get("openstack_password")
+        openstack_project = content.get("openstack_project")
 
         # Check that the site exists
         all_sites = phantom_get_sites(request.POST, user_obj)
@@ -422,6 +448,22 @@ def credentials(request):
         except:
             log.exception("Failed to add credentials for site %s" % site)
             return HttpResponseServerError()
+
+        # Add image generation credentials to DB
+        if nimbus_user_cert is not None:
+            add_packer_credentials(username=request.user.username, cloud=site, nimbus_user_cert=nimbus_user_cert,
+                    nimbus_user_key=nimbus_user_key, nimbus_canonical_id=nimbus_canonical_id)
+
+        if openstack_username is not None:
+            add_packer_credentials(username=request.user.username, cloud=site, openstack_username=openstack_username,
+                    openstack_password=openstack_password, openstack_project=openstack_project)
+
+        response_dict["nimbus_user_cert"] = nimbus_user_cert
+        response_dict["nimbus_user_key"] = nimbus_user_key
+        response_dict["nimbus_canonical_id"] = nimbus_canonical_id
+        response_dict["openstack_username"] = openstack_username
+        response_dict["openstack_password"] = openstack_password
+        response_dict["openstack_project"] = openstack_project
 
         h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
 
@@ -1020,9 +1062,20 @@ def image_builds(request, image_generator_id):
         h = HttpResponse(json.dumps(response), status=200, mimetype='application/javascript')
         return h
     elif request.method == "POST":
+<<<<<<< HEAD
 
         try:
             image_build = create_image_build(username, image_generator)
+=======
+        try:
+            content = json.loads(request.body)
+            credentials = content.get("credentials", {})
+        except:
+            return HttpResponseBadRequest()
+
+        try:
+            image_build = create_image_build(username, image_generator, additional_credentials=credentials)
+>>>>>>> refs/remotes/nimbusproject/master
         except PhantomWebException as p:
             return HttpResponseBadRequest(p.message)
 
@@ -1050,7 +1103,10 @@ def image_build_resource(request, image_generator_id, build_id):
         return HttpResponse(json.dumps(image_build), mimetype='application/javascript')
 
     elif request.method == "PUT":
+<<<<<<< HEAD
         # TO IMPLEMENT OR REMOVE
+=======
+>>>>>>> refs/remotes/nimbusproject/master
         response = get_image_generator(image_generator_id)
         if response is None or response.get('owner') != username:
             return HttpResponseNotFound('Image generator %s not found' % image_generator_id, mimetype='application/javascript')

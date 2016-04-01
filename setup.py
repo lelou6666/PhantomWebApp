@@ -24,12 +24,21 @@ setup(name=Name,
       include_package_data=True,
       package_data={ 'phantomweb': ['templates/registration/*.html', 'templates/*.html', 'static/css/*', 'static/js/*', 'static/images/*']  },
       install_requires = [
+<<<<<<< HEAD
           "django >= 1.4.8, < 1.5",
+=======
+          "django >= 1.5, < 1.6",
+          "django-password-policies",
+>>>>>>> refs/remotes/nimbusproject/master
           "boto >= 2.6, < 2.9.3",
           "ceiclient >= 0.2.2",
           "django-statsd >= 1.9.1",
           "django-tokenapi",
+<<<<<<< HEAD
           "django-celery",
+=======
+          "celery >= 3.1",
+>>>>>>> refs/remotes/nimbusproject/master
           "MySQL-python >= 1.2.5"],
       classifiers=[
           'Development Status :: 4 - Beta',

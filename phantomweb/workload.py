@@ -1,6 +1,9 @@
+from __future__ import absolute_import
+
 import json
 import logging
 import urlparse
+import celery
 
 from boto.ec2.autoscale import Tag
 from boto.exception import EC2ResponseError
@@ -11,26 +14,23 @@ import boto
 import boto.ec2.autoscale
 import statsd
 
+<<<<<<< HEAD
 from packer.tasks import packer_build
 from phantomweb.models import LaunchConfiguration, LaunchConfigurationDB, HostMaxPairDB, \
     PublicLaunchConfiguration, ImageGenerator, ImageGeneratorCloudConfig, ImageGeneratorScript, \
     ImageBuild
+=======
+from phantomweb.celery import packer_build
+from phantomweb.models import LaunchConfiguration, LaunchConfigurationDB, HostMaxPairDB, \
+    PublicLaunchConfiguration, ImageGenerator, ImageGeneratorCloudConfig, ImageGeneratorScript, \
+    ImageBuild, ImageBuildArtifact, PackerCredential
+>>>>>>> refs/remotes/nimbusproject/master
 from phantomweb.phantom_web_exceptions import PhantomWebException
 from phantomweb.util import PhantomWebDecorator, LogEntryDecorator, get_user_object
 
 
 IAAS_TIMEOUT = 5
 log = logging.getLogger('phantomweb.general')
-
-# at some point this should come from some sort of DB
-g_instance_types = ["m1.small", "m1.large", "m1.xlarge"]
-
-g_engine_to_phantom_de_map = {
-    "epu.decisionengine.impls.phantom_multi_site_overflow.PhantomMultiSiteOverflowEngine": "multicloud",
-    "epu.decisionengine.impls.sensor.SensorEngine": "sensor",
-}
-
-PHANTOM_REGION = 'phantom'
 
 OPENTSDB_METRICS = [
     "df.1kblocks.free", "df.1kblocks.total", "df.1kblocks.used",
@@ -101,6 +101,52 @@ def _get_launch_configuration(phantom_con, lc_db_object):
 ########
 
 # New implementation for the Phantom API
+def get_all_packer_credentials(username, clouds):
+    """get all packer credentials"""
+    packer_credentials_dict = {}
+    for cloud_name, cloud in clouds.iteritems():
+        packer_credentials_dict[cloud_name] = {}
+        try:
+            packer_credentials = PackerCredential.objects.get(username=username, cloud=cloud_name)
+            packer_credentials_dict[cloud_name]["canonical_id"] = packer_credentials.canonical_id
+            packer_credentials_dict[cloud_name]["usercert"] = packer_credentials.certificate
+            packer_credentials_dict[cloud_name]["userkey"] = packer_credentials.key
+            packer_credentials_dict[cloud_name]["openstack_username"] = packer_credentials.openstack_username
+            packer_credentials_dict[cloud_name]["openstack_password"] = packer_credentials.openstack_password
+            packer_credentials_dict[cloud_name]["openstack_project"] = packer_credentials.openstack_project
+        except PackerCredential.DoesNotExist:
+            pass
+
+    return packer_credentials_dict
+
+
+def add_packer_credentials(username, cloud, nimbus_user_cert=None, nimbus_user_key=None, nimbus_canonical_id=None,
+        openstack_username=None, openstack_password=None, openstack_project=None):
+    try:
+        pc = PackerCredential.objects.get(username=username, cloud=cloud)
+        if nimbus_user_cert:
+            pc.certificate = nimbus_user_cert
+            pc.key = nimbus_user_key
+            pc.canonical_id = nimbus_canonical_id
+        elif openstack_username is not None:
+            pc.openstack_username = openstack_username
+            pc.openstack_password = openstack_password
+            pc.openstack_project = openstack_project
+    except PackerCredential.DoesNotExist:
+        if nimbus_user_cert is not None:
+            pc = PackerCredential.objects.create(username=username, cloud=cloud, certificate=nimbus_user_cert,
+                    key=nimbus_user_key, canonical_id=nimbus_canonical_id, openstack_username=" ", openstack_password=" ",
+                    openstack_project=" ")
+        elif openstack_username is not None:
+            if openstack_password is None:
+                openstack_password = " "
+            pc = PackerCredential.objects.create(username=username, cloud=cloud, certificate=" ",
+                    key=" ", canonical_id=" ", openstack_username=openstack_username,
+                    openstack_password=openstack_password, openstack_project=openstack_project)
+
+    pc.save()
+    return pc
+
 
 def get_all_keys(clouds):
     """get all ssh keys from a dictionary of UserCloudInfo objects
@@ -412,6 +458,10 @@ def create_image_generator(username, name, cloud_params, script):
         ssh_username = params.get("ssh_username")
         common_image = params.get("common")
         new_image_name = params.get("new_image_name")
+<<<<<<< HEAD
+=======
+        public_image = params.get("public_image")
+>>>>>>> refs/remotes/nimbusproject/master
 
         if image_name is None:
             raise PhantomWebException("You must provide an image_id in the cloud parameters")
@@ -423,6 +473,11 @@ def create_image_generator(username, name, cloud_params, script):
             raise PhantomWebException("You must provide a common boolean in the cloud parameters")
         if new_image_name is None:
             raise PhantomWebException("You must provide a new_image_name in the cloud parameters")
+<<<<<<< HEAD
+=======
+        if public_image is None:
+            raise PhantomWebException("You must provide a public_image boolean in the cloud parameters")
+>>>>>>> refs/remotes/nimbusproject/master
 
         igcc = ImageGeneratorCloudConfig.objects.create(
             image_generator=image_generator,
@@ -431,7 +486,12 @@ def create_image_generator(username, name, cloud_params, script):
             ssh_username=ssh_username,
             instance_type=instance_type,
             common_image=common_image,
+<<<<<<< HEAD
             new_image_name=new_image_name)
+=======
+            new_image_name=new_image_name,
+            public_image=public_image)
+>>>>>>> refs/remotes/nimbusproject/master
         igcc.save()
 
         igs = ImageGeneratorScript.objects.create(
@@ -464,7 +524,12 @@ def get_image_generator(id):
             "ssh_username": cc.ssh_username,
             "instance_type": cc.instance_type,
             "common": cc.common_image,
+<<<<<<< HEAD
             "new_image_name": cc.new_image_name
+=======
+            "new_image_name": cc.new_image_name,
+            "public_image": cc.public_image
+>>>>>>> refs/remotes/nimbusproject/master
         }
 
     scripts = image_generator.imagegeneratorscript_set.all()
@@ -557,6 +622,7 @@ def remove_image_generator(id):
     image_generator.delete()
 
 
+<<<<<<< HEAD
 def create_image_build(username, image_generator):
     user_obj = get_user_object(username)
     all_clouds = user_obj.get_clouds()
@@ -565,20 +631,63 @@ def create_image_build(username, image_generator):
         cloud = all_clouds.get(site)
 
         if cloud is not None:
+=======
+def create_image_build(username, image_generator, additional_credentials={}):
+    user_obj = get_user_object(username)
+    all_clouds = user_obj.get_clouds()
+    sites = {}
+    credentials = {}
+    for site in image_generator["cloud_params"]:
+        try:
+            cloud = all_clouds[site]
+            sites[site] = cloud.site_desc
+>>>>>>> refs/remotes/nimbusproject/master
             credentials[site] = {
                 "access_key": cloud.iaas_key,
                 "secret_key": cloud.iaas_secret,
             }
 
+<<<<<<< HEAD
     result = packer_build.delay(image_generator, credentials)
+=======
+            if sites[site]["type"] == "nimbus":
+                try:
+                    packer_credentials = PackerCredential.objects.get(username=username, cloud=site)
+                    credentials[site]["canonical_id"] = packer_credentials.canonical_id
+                    credentials[site]["usercert"] = packer_credentials.certificate
+                    credentials[site]["userkey"] = packer_credentials.key
+                except PackerCredential.DoesNotExist:
+                    raise PhantomWebException("Could not find extra Nimbus credentials for image generation.")
+            elif sites[site]["type"] == "openstack":
+                try:
+                    packer_credentials = PackerCredential.objects.get(username=username, cloud=site)
+                    credentials[site]["openstack_username"] = packer_credentials.openstack_username
+                    credentials[site]["openstack_password"] = packer_credentials.openstack_password
+                    credentials[site]["openstack_project"] = packer_credentials.openstack_project
+                except PackerCredential.DoesNotExist:
+                    raise PhantomWebException("Could not find extra OpenStack credentials for image generation.")
+                if site in additional_credentials:
+                    openstack_password = additional_credentials[site].get("openstack_password")
+                    if openstack_password is not None:
+                        credentials[site]["openstack_password"] = openstack_password
+        except KeyError:
+            raise PhantomWebException("Could not get cloud %s" % site)
+
+    result = packer_build.delay(image_generator, sites, credentials)
+>>>>>>> refs/remotes/nimbusproject/master
 
     image_build = ImageBuild.objects.create(
         image_generator_id=image_generator["id"],
         celery_task_id=result.id,
         status='submitted',
         returncode=-1,
+<<<<<<< HEAD
         ami_name="",
         full_output="",
+=======
+        full_output="",
+        cloud_name=site,
+>>>>>>> refs/remotes/nimbusproject/master
         owner=username)
     image_build.save()
 
@@ -599,6 +708,7 @@ def get_image_build(username, image_build_id):
     except ImageBuild.DoesNotExist:
         raise PhantomWebException("Could not find image build %s. Doesn't exist." % image_build_id)
 
+<<<<<<< HEAD
     if image_build.status == "successful":
         ready = True
         ret = {"id": image_build.id, "ready": ready, "owner": username}
@@ -615,12 +725,54 @@ def get_image_build(username, image_build_id):
             image_build.ami_name = result.result["ami_name"]
             image_build.full_output = result.result["full_output"]
             image_build.save()
+=======
+    ret = {"id": image_build.id, "owner": username, "cloud_name": image_build.cloud_name}
+    if image_build.status == "successful":
+        ret["ready"] = True
+    elif image_build.status == "submitted":
+        result = AsyncResult(image_build.celery_task_id)
+        ready = result.ready()
+        ret["ready"] = ready
+        if ready:
+            if result.successful():
+                image_build.returncode = result.result["returncode"]
+                if image_build.returncode == 0:
+                    image_build.status = "successful"
+                else:
+                    image_build.status = "failed"
+
+                for cloud_name in result.result["artifacts"]:
+                    image_build_artifact = ImageBuildArtifact.objects.create(
+                        image_build_id=image_build.id,
+                        cloud_name=cloud_name,
+                        image_name=result.result["artifacts"][cloud_name])
+                    image_build_artifact.save()
+
+                image_build.full_output = result.result["full_output"]
+                image_build.save()
+            else:
+                image_build.status = "failed"
+                image_build.returncode = -1
+                image_build.full_output = str(result.result)
+                image_build.save()
+>>>>>>> refs/remotes/nimbusproject/master
 
     ret["status"] = image_build.status
     if image_build.status != "submitted":
         ret["returncode"] = image_build.returncode
+<<<<<<< HEAD
         ret["ami_name"] = image_build.ami_name
         ret["full_output"] = image_build.full_output
+=======
+        ret["full_output"] = image_build.full_output
+        ret["artifacts"] = {}
+        try:
+            artifacts = ImageBuildArtifact.objects.filter(image_build_id=image_build_id)
+            for artifact in artifacts:
+                ret["artifacts"][artifact.cloud_name] = artifact.image_name
+        except ImageBuildArtifact.DoesNotExist:
+            raise PhantomWebException("Could not find image build artifact for image build id %s. Doesn't exist." % image_build_id)
+>>>>>>> refs/remotes/nimbusproject/master
 
     return ret
 

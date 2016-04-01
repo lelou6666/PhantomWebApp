@@ -1,11 +1,23 @@
 var g_cloud_map = {};
 var g_arranged_cloud_values = {};
 var g_ig_info = {};
+<<<<<<< HEAD
+=======
+var g_ib_info = {};
+>>>>>>> refs/remotes/nimbusproject/master
 var g_unsaved_igs = [];
 var g_blank_name = "<new name>";
 var g_selected_ig = null;
 var g_selected_cloud = null;
+<<<<<<< HEAD
 var MAX_PUBLIC_IMAGES_ITEMS = 200;
+=======
+var g_current_builds_timer = null;
+var g_current_builds_request = null;
+var g_openstack_password = null;
+var MAX_PUBLIC_IMAGES_ITEMS = 200;
+var BUILDS_TIMER_MS = 5000;
+>>>>>>> refs/remotes/nimbusproject/master
 
 $(document).ready(function() {
     //$("#nav-imagegenerators").addClass("active");
@@ -87,7 +99,11 @@ $(document).ready(function() {
     });
 
     $("#phantom_image_generator_run").click(function() {
+<<<<<<< HEAD
         phantom_image_generator_run();
+=======
+        phantom_image_generator_prepare_run();
+>>>>>>> refs/remotes/nimbusproject/master
         return false;
     });
 
@@ -102,6 +118,7 @@ $(document).ready(function() {
     $(".context-details").hide();
     $("#phantom_ig_script").parent().show();
 
+<<<<<<< HEAD
     phantom_ig_load();
 });
 
@@ -109,13 +126,95 @@ function phantom_ig_buttons(enabled) {
 
     if (enabled) {
         $("button, input, select").removeAttr("disabled");
+=======
+    $("#image_build_table_body").on('click', 'tr', function(event){
+        $(this).parent().children().removeClass("info");
+        var image_build_id = $(this).children().first().text();
+        show_image_build_details(image_build_id);
+    });
+
+    phantom_ig_load();
+});
+
+
+function get_image_build(image_generator_id, image_build_id) {
+    var image_build = null;
+    image_build = g_ib_info[image_generator_id][image_build_id];
+    return image_build;
+}
+
+
+function show_image_build_details(image_build_id) {
+    function make_row(key, value) {
+      return "<tr><td><strong>" + key + ":</strong></td><td>" + value + "</td></tr>";
+    }
+
+    if (image_build_id === null) {
+        return;
+    }
+
+    $("#image_build_table_body").children().removeClass("info");
+    var matched_row = $("#image_build_table_body tr td:contains('" + image_build_id + "')")
+      .parent().addClass("info");
+
+    // If this image build isn't shown right now, we don't want to display it.
+    // This could happen when image builds are filtered
+    // Unused at the moment
+    if (matched_row.length === 0) {
+        return;
+    }
+
+    var table = $("#image_build_details_table_body").empty();
+    var image_generator = g_ig_info[g_selected_ig];
+    var image_build = get_image_build(image_generator["id"], image_build_id)
+    if (image_build === null) {
+      return;
+    }
+
+    g_selected_image_build = image_build_id;
+    var status = image_build["status"]
+    var returncode = image_build["returncode"]
+
+    var data = make_row("Image build", image_build["id"]) +
+      make_row("Status", image_build["status"]);
+
+    if (status != "submitted") {
+      if (returncode == -1) {
+        data += make_row("Error message", image_build["full_output"]);
+      } else if (returncode == 0) {
+        var artifacts = image_build["artifacts"]
+        var image_list = "<ul>"
+        for (var cloud_name in artifacts) {
+          image_list += "<li>" + cloud_name + ": " + artifacts[cloud_name] + "</li>";
+        }
+        image_list += "</ul>"
+        data += make_row("Return code", returncode) +
+          make_row("Image names", image_list) +
+          make_row("Full output", "<pre>" + image_build["full_output"] + "</pre>");
+      } else {
+        data += make_row("Return code", returncode) +
+          make_row("Full output", "<pre>" + image_build["full_output"] + "</pre>");
+      }
+    }
+
+    table.append(data);
+}
+
+function phantom_ig_buttons(enabled) {
+    if (enabled) {
+        //$("button, input, select").removeAttr("disabled");
+>>>>>>> refs/remotes/nimbusproject/master
         $("#phantom_ig_button_add").removeAttr("disabled")
             .parent().removeClass("disabled");
         phantom_ig_change_image_type();
         $('#loading').hide();
     }
     else {
+<<<<<<< HEAD
         $("button, input, select").attr("disabled", true);
+=======
+        //$("button, input, select").attr("disabled", true);
+>>>>>>> refs/remotes/nimbusproject/master
         $("#phantom_ig_button_add").attr("disabled", true)
             .parent().addClass("disabled");
         $('#loading').show();
@@ -161,6 +260,7 @@ function phantom_ig_select_new_cloud() {
 }
 
 function phantom_ig_change_image_type() {
+<<<<<<< HEAD
     if ($("#phantom_ig_common_choice_checked").is(':checked')) {
         $("#phantom_ig_common_image_input").removeAttr("disabled", "disabled");
         $("#phantom_ig_user_images_choices").attr("disabled", "disabled");
@@ -168,6 +268,17 @@ function phantom_ig_change_image_type() {
     else {
         $("#phantom_ig_user_images_choices").removeAttr("disabled", "disabled");
         $("#phantom_ig_common_image_input").attr("disabled", "disabled");
+=======
+    if (document.getElementById("phantom_cloud_div_image_id").style.display == 'none') {
+      if ($("#phantom_ig_common_choice_checked").is(':checked')) {
+          $("#phantom_ig_common_image_input").removeAttr("disabled", "disabled");
+          $("#phantom_ig_user_images_choices").attr("disabled", "disabled");
+      }
+      else {
+          $("#phantom_ig_user_images_choices").removeAttr("disabled", "disabled");
+          $("#phantom_ig_common_image_input").attr("disabled", "disabled");
+      }
+>>>>>>> refs/remotes/nimbusproject/master
     }
 }
 
@@ -185,12 +296,42 @@ function phantom_ig_select_new_cloud_internal(cloud_name) {
     public_images_typeahead.hide();
 
     $("#phantom_ig_instance").empty();
+<<<<<<< HEAD
     for (instance in cloud_data.instance_types) {
         var i = cloud_data.instance_types[instance];
         var new_opt = $('<option>', {'name': i, value: i, text: i});
         $("#phantom_ig_instance").append(new_opt);
     }
     $("#phantom_ig_common_image_input").val("");
+=======
+    $("#phantom_ig_ssh_username").val("");
+    $("#phantom_ig_new_image_name").val("");
+
+    if (cloud_data.type != "nimbus") {
+      // Disable the public image checkbox
+      if ($("#phantom_ig_public_image").is(':checked')) {
+        $("#phantom_ig_public_image").attr('checked', false);
+      }
+      $("#phantom_ig_public_image").attr("disabled", "disabled");
+    } else {
+      $("#phantom_ig_public_image").removeAttr("disabled");
+    }
+
+    if (cloud_data.type != "ec2") {
+      document.getElementById("phantom_cloud_div_instance_type").style.display = 'none';
+      // Disable the instance type selection field
+      //$("#phantom_ig_instance").attr("disabled", "disabled");
+    } else {
+      document.getElementById("phantom_cloud_div_instance_type").style.display = 'block';
+      for (instance in cloud_data.instance_types) {
+          var i = cloud_data.instance_types[instance];
+          var new_opt = $('<option>', {'name': i, value: i, text: i});
+          $("#phantom_ig_instance").append(new_opt);
+      }
+    }
+    $("#phantom_ig_common_image_input").val("");
+    $("#phantom_ig_image_id_input").val("");
+>>>>>>> refs/remotes/nimbusproject/master
 
     $("#phantom_ig_user_images_choices").empty();
     for (personal in cloud_data.user_images) {
@@ -198,8 +339,36 @@ function phantom_ig_select_new_cloud_internal(cloud_name) {
         var new_opt = $('<option>', {'name': i, value: i, text: i});
         $("#phantom_ig_user_images_choices").append(new_opt);
     }
+<<<<<<< HEAD
     if (public_images_typeahead) {
         public_images_typeahead.source = cloud_data.public_images;
+=======
+
+    if (public_images_typeahead) {
+      if (cloud_data.type != "openstack") {
+        public_images_typeahead.source = cloud_data.public_images;
+      } else {
+        public_images_typeahead.source = null;
+      }
+    }
+
+    if (cloud_data.type == "nimbus") {
+      document.getElementById("phantom_cloud_div_make_public_image").style.display = 'block';
+    } else {
+      document.getElementById("phantom_cloud_div_make_public_image").style.display = 'none';
+    }
+
+    if (cloud_data.type == "openstack") {
+      document.getElementById("phantom_cloud_div_public_image").style.display = 'none';
+      document.getElementById("phantom_cloud_div_personal_image").style.display = 'none';
+      document.getElementById("phantom_cloud_div_image_id").style.display = 'block';
+      $("#phantom_ig_user_images_choices").attr("disabled", "disabled");
+    } else {
+      document.getElementById("phantom_cloud_div_public_image").style.display = 'block';
+      document.getElementById("phantom_cloud_div_personal_image").style.display = 'block';
+      document.getElementById("phantom_cloud_div_image_id").style.display = 'none';
+      $("#phantom_ig_user_images_choices").removeAttr("disabled");
+>>>>>>> refs/remotes/nimbusproject/master
     }
 }
 
@@ -229,6 +398,32 @@ function phantom_ig_load_ig_names() {
     phantom_ig_change_ig_internal(g_selected_ig);
 }
 
+<<<<<<< HEAD
+=======
+function make_image_build_table_row(image_build) {
+    var status = image_build["status"]
+    var id = image_build["id"]
+    if (status === "successful") {
+        status = '<span class="label label-success">' + status + '</span>';
+    }
+    else if (status === "submitted") {
+        status = '<span class="label label-warning">' + status + '</span>';
+    }
+    else if (status === "failed") {
+        status = '<span class="label label-important">' + status + '</span>';
+    }
+    else {
+        status = '<span class="label">' + status + '</span>';
+    }
+
+    var row = "<tr id='image-build-row-" + id + "'>" +
+      "<td class='image-build-id'>" + id + "</td>" +
+      "<td>" + status + "</td>" +
+      "</tr>";
+    return row;
+}
+
+>>>>>>> refs/remotes/nimbusproject/master
 function make_cloud_table_row(site, status) {
 
     if (status === "Enabled") {
@@ -248,6 +443,48 @@ function make_cloud_table_row(site, status) {
     return row;
 }
 
+<<<<<<< HEAD
+=======
+function phantom_image_builds_abort() {
+    if (g_current_builds_request !== null) {
+        try {
+            g_current_builds_request.abort();
+        }
+        catch (e) {
+        }
+        g_current_builds_request = null;
+    }
+    if (g_current_builds_timer !== null) {
+        window.clearInterval(g_current_builds_timer);
+        g_current_builds_timer = null;
+    }
+    //phantom_domain_details_buttons(true);
+}
+
+function phantom_image_builds_internal() {
+    phantom_image_builds_abort();
+    //phantom_domain_details_buttons(false);
+    $("#image_build_table_body").empty();
+
+    ig = g_ig_info[g_selected_ig];
+
+    var table_body = $("#image_build_table_body");
+
+    for (var ibx in g_ib_info[ig["id"]]) {
+      image_build = g_ib_info[ig["id"]][ibx];
+      var row = make_image_build_table_row(image_build);
+      table_body.append(row);
+    }
+    if ("id" in ig) {
+      get_phantom_image_builds(ig["id"]);
+    }
+}
+
+function phantom_start_builds_timer() {
+    g_current_builds_timer = window.setTimeout(phantom_image_builds_internal, BUILDS_TIMER_MS);
+}
+
+>>>>>>> refs/remotes/nimbusproject/master
 function phantom_ig_change_ig_internal(ig_name) {
 
     if (!ig_name) {
@@ -266,7 +503,11 @@ function phantom_ig_change_ig_internal(ig_name) {
 
     $("#cloud_options_name").text("cloud");
     $("#cloud_table_body").empty();
+<<<<<<< HEAD
 
+=======
+    $("#image_build_details_table_body").empty();
+>>>>>>> refs/remotes/nimbusproject/master
 
     if (ig_name == g_blank_name) {
         // set to blank values
@@ -319,6 +560,38 @@ function phantom_ig_change_ig_internal(ig_name) {
     if (first_cloud) {
         phantom_ig_order_selected_click(first_cloud);
     }
+<<<<<<< HEAD
+=======
+
+    phantom_image_builds_internal();
+}
+
+function get_phantom_image_builds(ig_id) {
+    var success_func = function(image_builds) {
+      try {
+          clear_phantom_alerts();
+          g_ib_info[ig_id] = {}
+          for (var i = 0; i < image_builds.length; i++) {
+              var image_build = image_builds[i];
+              g_ib_info[ig_id][image_build["id"]] = image_build;
+          }
+          phantom_start_builds_timer();
+          phantom_ig_buttons(true);
+      }
+      catch (err) {
+          phantom_alert("There was a problem loading the page.  Please try again later. ".concat(err.message));
+          $('#loading').hide();
+      }
+    }
+
+    var error_func = function(obj, message) {
+      phantom_ig_buttons(true);
+      phantom_alert(message);
+    }
+
+    var url = make_url("imagegenerators/" + ig_id + "/builds")
+    var image_builds = phantomGET(url, success_func, error_func);
+>>>>>>> refs/remotes/nimbusproject/master
 }
 
 function phantom_ig_change_ig_click(ig_name) {
@@ -343,20 +616,36 @@ function phantom_ig_load_internal() {
         g_cloud_map = {};
         for(var i=0; i<sites.length; i++) {
             var site = sites[i];
+<<<<<<< HEAD
             g_cloud_map[site.id] = {};
             g_cloud_map[site.id]['user_images'] = site['user_images'];
             g_cloud_map[site.id]['public_images'] = site['public_images'];
             g_cloud_map[site.id]['instance_types'] = site['instance_types'];
+=======
+            if (site['image_generation']) {
+              g_cloud_map[site.id] = {};
+              g_cloud_map[site.id]['user_images'] = site['user_images'];
+              g_cloud_map[site.id]['public_images'] = site['public_images'];
+              g_cloud_map[site.id]['instance_types'] = site['instance_types'];
+              g_cloud_map[site.id]['type'] = site['type'];
+            }
+>>>>>>> refs/remotes/nimbusproject/master
         }
     }
 
     var load_credentials_success = function(clouds) {
         for(var i=0; i<clouds.length; i++) {
             var cloud = clouds[i];
+<<<<<<< HEAD
             if (!cloud.id in g_cloud_map) {
                 g_cloud_map[cloud.id] = {};
             }
             g_cloud_map[cloud.id]['status'] = 0;
+=======
+            if (cloud.id in g_cloud_map) {
+                g_cloud_map[cloud.id]['status'] = 0;
+            }
+>>>>>>> refs/remotes/nimbusproject/master
         }
     }
 
@@ -369,6 +658,10 @@ function phantom_ig_load_internal() {
             for(var i=0; i<imagegenerators.length; i++) {
                 var imagegenerator = imagegenerators[i];
                 g_ig_info[imagegenerator.name] = imagegenerator;
+<<<<<<< HEAD
+=======
+                get_phantom_image_builds(imagegenerator["id"])
+>>>>>>> refs/remotes/nimbusproject/master
             }
 
             phantom_ig_load_ig_names();
@@ -463,6 +756,7 @@ function save_ig_values() {
         return true;
     }
 
+<<<<<<< HEAD
     var instance_type = $("#phantom_ig_instance").val().trim();
     var ssh_username = $("#phantom_ig_ssh_username").val().trim();
     var new_image_name = $("#phantom_ig_new_image_name").val().trim();
@@ -475,6 +769,31 @@ function save_ig_values() {
     else {
         image_id = ($("#phantom_ig_user_images_choices").val() || "").trim();
         common = false;
+=======
+    var cloud_data = g_cloud_map[cloud_name];
+    if (!cloud_data || cloud_data['status'] != 0) {
+        return false;
+    }
+
+    var instance_type = ($("#phantom_ig_instance").val() || "").trim();
+    var ssh_username = $("#phantom_ig_ssh_username").val().trim();
+    var new_image_name = $("#phantom_ig_new_image_name").val().trim();
+    var public_image = $("#phantom_ig_public_image").is(':checked');
+    var common;
+    var image_id = "";
+    if (document.getElementById("phantom_cloud_div_image_id").style.display == 'block') {
+      image_id = ($("#phantom_ig_image_id_input").val() || "").trim();
+      common = true;
+    } else {
+      if ($("#phantom_ig_common_choice_checked").is(':checked')) {
+          image_id = $("#phantom_ig_common_image_input").val().trim();
+          common = true;
+      }
+      else {
+          image_id = ($("#phantom_ig_user_images_choices").val() || "").trim();
+          common = false;
+      }
+>>>>>>> refs/remotes/nimbusproject/master
     }
 
     if (!cloud_name) {
@@ -482,12 +801,19 @@ function save_ig_values() {
         return false;
     }
     if (!image_id) {
+<<<<<<< HEAD
+=======
+      if (document.getElementById("phantom_cloud_div_image_id").style.display == 'block') {
+        $("#phantom_ig_image_id_input").parent().addClass("error");
+      } else {
+>>>>>>> refs/remotes/nimbusproject/master
         if ($("#phantom_ig_common_choice_checked").is(":checked")) {
             $("#phantom_ig_common_image_input").parent().addClass("error");
         }
         else {
             $("#phantom_ig_user_images_choices").parent().addClass("error");
         }
+<<<<<<< HEAD
         phantom_warning("You must select an image.");
         return false;
     }
@@ -495,6 +821,18 @@ function save_ig_values() {
         $("#phantom_ig_instance").parent().addClass("error");
         phantom_alert("You must select an instance type.");
         return false;
+=======
+      }
+      phantom_warning("You must select an image.");
+      return false;
+    }
+    if (!instance_type) {
+      if (cloud_data.type == "ec2") {
+         $("#phantom_ig_instance").parent().addClass("error");
+         phantom_alert("You must select an instance type.");
+         return false;
+      }
+>>>>>>> refs/remotes/nimbusproject/master
     }
     if (!ssh_username) {
         $("#phantom_ig_ssh_username").parent().addClass("error");
@@ -514,6 +852,10 @@ function save_ig_values() {
         'common': common,
         'ssh_username': ssh_username,
         'new_image_name': new_image_name,
+<<<<<<< HEAD
+=======
+        'public_image': public_image,
+>>>>>>> refs/remotes/nimbusproject/master
     };
 
     g_arranged_cloud_values[cloud_name] = entry;
@@ -574,6 +916,10 @@ function phantom_ig_save_click_internal() {
         site['instance_type'] = cloud_data['instance_type'];
         site['ssh_username'] = cloud_data['ssh_username'];
         site['new_image_name'] = cloud_data['new_image_name'];
+<<<<<<< HEAD
+=======
+        site['public_image'] = cloud_data['public_image'];
+>>>>>>> refs/remotes/nimbusproject/master
         site['common'] = cloud_data['common'];
     });
 
@@ -603,6 +949,10 @@ function phantom_ig_save_click_internal() {
     }
     phantom_info("Saving " + ig_name + " image generator");
     phantom_ig_buttons(false);
+<<<<<<< HEAD
+=======
+    g_ig_info[g_selected_ig]['cloud_params'] = g_arranged_cloud_values
+>>>>>>> refs/remotes/nimbusproject/master
 }
 
 function phantom_ig_save_click() {
@@ -618,10 +968,17 @@ function reset_cloud_and_options() {
     $("#cloud_table_body").empty();
     $("#phantom_ig_instance").empty();
     $("#phantom_ig_script").val("");
+<<<<<<< HEAD
     $("#phantom_ig_common_image_input").val("");
     $("#phantom_ig_instance").empty();
     $("#phantom_ig_ssh_username").empty();
     $("#phantom_ig_new_image_name").empty();
+=======
+    $("#phantom_ig_image_id_input").val("");
+    $("#phantom_ig_common_image_input").val("");
+    $("#phantom_ig_ssh_username").val("");
+    $("#phantom_ig_new_image_name").val("");
+>>>>>>> refs/remotes/nimbusproject/master
     $("#phantom_ig_user_images_choices").empty();
     $("#image_generator_options_head").text("Image Generator");
     $("#cloud_options_name").text("Cloud");
@@ -660,6 +1017,11 @@ function phantom_ig_delete_internal(ig_name) {
 
     phantom_info("Deleting " + ig_name + " image generator");
     phantomDELETE(url, success_func, error_func);
+<<<<<<< HEAD
+=======
+
+    delete g_ig_info[ig_name]
+>>>>>>> refs/remotes/nimbusproject/master
 }
 
 function check_phantom_image_build(ig_id, ib_id) {
@@ -674,12 +1036,24 @@ function check_phantom_image_build(ig_id, ib_id) {
          case "successful":
            phantom_ig_buttons(true);
            if (image_build["returncode"] == 0) {
+<<<<<<< HEAD
              phantom_info("Generated image " + image_build["ami_name"] + "on cloud ec2");
+=======
+             phantom_info("Generated image " + image_build["ami_name"] + " on cloud " + image_build["cloud_name"]);
+>>>>>>> refs/remotes/nimbusproject/master
            } else {
              clear_phantom_alerts();
              phantom_warning("Failed to generator image: " + image_build["full_output"]);
            }
            break;
+<<<<<<< HEAD
+=======
+         case "failed":
+           phantom_ig_buttons(true);
+           clear_phantom_alerts();
+           phantom_warning("Failed to generate image: " + image_build["full_output"]);
+           break;
+>>>>>>> refs/remotes/nimbusproject/master
          default:
            phantom_warning("Received image build response with status " + image_build["status"])
         }
@@ -699,6 +1073,7 @@ function check_phantom_image_build(ig_id, ib_id) {
     var image_build = phantomGET(url, success_func, error_func);
 }
 
+<<<<<<< HEAD
 function phantom_image_generator_run() {
   var ig_name = g_selected_ig;
   if (!ig_name) {
@@ -715,6 +1090,17 @@ function phantom_image_generator_run() {
       setTimeout(function() {
         check_phantom_image_build(ig_id, new_image_build['id'])
       }, 1000);
+=======
+function phantom_image_generator_run(ig_id, ig_name)
+{
+  var success_func = function(new_image_build) {
+      clear_phantom_alerts();
+      phantom_info("Starting image generator " + ig_name);
+      phantom_ig_buttons(false);
+      //setTimeout(function() {
+        //check_phantom_image_build(ig_id, new_image_build['id'])
+      //}, 1000);
+>>>>>>> refs/remotes/nimbusproject/master
   }
 
   var error_func = function(obj, message) {
@@ -724,9 +1110,57 @@ function phantom_image_generator_run() {
 
   var url = make_url("imagegenerators/" + ig_id + "/builds");
   var data = {}
+<<<<<<< HEAD
   phantomPOST(url, data, success_func, error_func);
 }
 
+=======
+  if (g_openstack_password != null) {
+    data['credentials'] = { 'hotel-openstack': { 'openstack_password': g_openstack_password }};
+    g_openstack_password = null;
+  }
+  phantomPOST(url, data, success_func, error_func);
+}
+
+function phantom_image_generator_prepare_run() {
+  var ig_name = g_selected_ig;
+  if (!ig_name) {
+      phantom_warning("You must select an existing image generator name to run.")
+      return;
+  }
+
+  var openstack_clouds = {}
+
+  var ig = g_ig_info[ig_name]
+  g_arranged_cloud_values = ig['cloud_params'];
+  var ig_id = ig['id']
+
+  for (var site in g_arranged_cloud_values) {
+    var cloud_data = g_cloud_map[site];
+
+    if (!cloud_data || cloud_data['status'] != 0) {
+        return;
+    }
+
+    if (cloud_data['type'] == 'openstack') {
+      openstack_clouds[site] = null;
+    }
+  }
+
+  if ("hotel-openstack" in openstack_clouds) {
+    $('#build-with-openstack-password').on("click", function() {
+      g_openstack_password = $('#openstack-password').val();
+      phantom_image_generator_run(ig_id, ig_name);
+    });
+
+    $('#enter-openstack-password-prompt').text("Please enter OpenStack password for hotel-openstack");
+    $('#enter-openstack-password-modal').modal();
+  } else {
+    phantom_image_generator_run(ig_id, ig_name);
+  }
+}
+
+>>>>>>> refs/remotes/nimbusproject/master
 function phantom_ig_delete_click() {
 
     var ig_name = g_selected_ig;
@@ -775,6 +1209,7 @@ function phantom_ig_order_selected_click(cloud_name) {
             $("#phantom_ig_instance").val(cloud_val_dict['instance_type']);
             $("#phantom_ig_ssh_username").val(cloud_val_dict['ssh_username']);
             $("#phantom_ig_new_image_name").val(cloud_val_dict['new_image_name']);
+<<<<<<< HEAD
 
             if (cloud_val_dict['common'] === true) {
                 $("#phantom_ig_common_image_input").val(cloud_val_dict['image_id']);
@@ -787,6 +1222,25 @@ function phantom_ig_order_selected_click(cloud_name) {
             phantom_ig_change_image_type();
             $("#cloud-disable-buttons").show();
             $("#cloud-enable-buttons").hide();
+=======
+            $("#phantom_ig_public_image").attr('checked', cloud_val_dict['public_image']);
+
+            if (document.getElementById("phantom_cloud_div_image_id").style.display == 'block') {
+              $("#phantom_ig_image_id_input").val(cloud_val_dict['image_id']);
+            } else {
+              if (cloud_val_dict['common'] === true) {
+                $("#phantom_ig_common_image_input").val(cloud_val_dict['image_id']);
+                $("#phantom_ig_common_choice_checked").attr('checked',true);
+              }
+              else {
+                $("#phantom_ig_user_images_choices").val(cloud_val_dict['image_id']);
+                $("#phantom_ig_user_choice_checked").attr('checked',true);
+              }
+              phantom_ig_change_image_type();
+              $("#cloud-disable-buttons").show();
+              $("#cloud-enable-buttons").hide();
+            }
+>>>>>>> refs/remotes/nimbusproject/master
         }
         else {
             phantom_ig_select_new_cloud_internal(cloud_name);

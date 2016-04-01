@@ -70,6 +70,25 @@ class PhantomUser(models.Model):
     access_key_id = models.CharField(max_length=128)
 
 
+<<<<<<< HEAD
+=======
+class PackerCredential(models.Model):
+    username = models.CharField(max_length=128)
+    cloud = models.CharField(max_length=128)
+    canonical_id = models.CharField(max_length=128)
+    certificate = models.TextField()
+    key = models.TextField()
+    username = models.CharField(max_length=128)
+    cloud = models.CharField(max_length=128)
+    openstack_username = models.CharField(max_length=128)
+    openstack_password = models.CharField(max_length=128)
+    openstack_project = models.CharField(max_length=128)
+
+    class Meta(object):
+        unique_together = ("username", "cloud")
+
+
+>>>>>>> refs/remotes/nimbusproject/master
 class ImageGenerator(RandomPrimaryIdModel):
     name = models.CharField(max_length=128)
     username = models.CharField(max_length=128)
@@ -91,6 +110,10 @@ class ImageGeneratorCloudConfig(models.Model):
     instance_type = models.CharField(max_length=128)
     common_image = models.BooleanField()
     new_image_name = models.CharField(max_length=128)
+<<<<<<< HEAD
+=======
+    public_image = models.BooleanField()
+>>>>>>> refs/remotes/nimbusproject/master
 
 
 class ImageBuild(models.Model):
@@ -98,6 +121,18 @@ class ImageBuild(models.Model):
     celery_task_id = models.CharField(max_length=128)
     status = models.CharField(max_length=128)
     returncode = models.IntegerField()
+<<<<<<< HEAD
     ami_name = models.CharField(max_length=128)
     full_output = models.TextField()
     owner = models.CharField(max_length=128)
+=======
+    full_output = models.TextField()
+    owner = models.CharField(max_length=128)
+    cloud_name = models.CharField(max_length=128)
+
+
+class ImageBuildArtifact(models.Model):
+    image_build = models.ForeignKey(ImageBuild)
+    cloud_name = models.CharField(max_length=128)
+    image_name = models.CharField(max_length=128)
+>>>>>>> refs/remotes/nimbusproject/master

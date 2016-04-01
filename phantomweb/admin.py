@@ -2,7 +2,12 @@ from django.contrib import admin
 
 from phantomweb.models import RabbitInfoDB, LaunchConfigurationDB,\
     HostMaxPairDB, PhantomUser, LaunchConfiguration, PublicLaunchConfiguration, \
+<<<<<<< HEAD
     ImageGenerator, ImageGeneratorScript, ImageGeneratorCloudConfig
+=======
+    ImageGenerator, ImageGeneratorScript, ImageGeneratorCloudConfig, ImageBuild, \
+    PackerCredential, ImageBuildArtifact
+>>>>>>> refs/remotes/nimbusproject/master
 
 
 class RabbitInfoAdmin(admin.ModelAdmin):
@@ -41,6 +46,15 @@ class PhantomUserAdmin(admin.ModelAdmin):
 admin.site.register(PhantomUser, PhantomUserAdmin)
 
 
+<<<<<<< HEAD
+=======
+class PackerCredentialAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(PackerCredential, PackerCredentialAdmin)
+
+
+>>>>>>> refs/remotes/nimbusproject/master
 class ImageGeneratorAdmin(admin.ModelAdmin):
     pass
 
@@ -57,3 +71,18 @@ class ImageGeneratorCloudConfigAdmin(admin.ModelAdmin):
     pass
 
 admin.site.register(ImageGeneratorCloudConfig, ImageGeneratorCloudConfigAdmin)
+<<<<<<< HEAD
+=======
+
+
+class ImageBuildAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageBuild, ImageBuildAdmin)
+
+
+class ImageBuildArtifactAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageBuildArtifact, ImageBuildArtifactAdmin)
+>>>>>>> refs/remotes/nimbusproject/master
