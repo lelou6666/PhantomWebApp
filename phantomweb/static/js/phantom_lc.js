@@ -1,3 +1,4 @@
+var g_appliances = {};
 var g_cloud_map = {};
 var g_arranged_cloud_values = {};
 var g_lc_info = {};
@@ -7,6 +8,51 @@ var g_selected_lc = null;
 var g_selected_cloud = null;
 var MAX_PUBLIC_IMAGES_ITEMS = 200;
 
+var PHANTOMIZE_USER_DATA_PART1 = '#!/bin/bash\n\
+\n\
+mkdir -p /etc/chef /var/log/chef /var/chef/cookbooks /var/cache/chef /var/backups/chef /var/run/chef\n\
+\n\
+cat > /etc/chef/solo.rb <<END\n\
+log_level              :debug\n\
+log_location           \"/var/log/chef/client.log\"\n\
+environment            \"_default\"\n\
+cookbook_path          \"/var/chef/cookbooks\"\n\
+file_cache_path        \"/var/cache/chef\"\n\
+file_backup_path       \"/var/backups/chef\"\n\
+pid_file               \"/var/run/chef/client.pid\"\n\
+ssl_verify_mode        :verify_peer\n\
+Chef::Log::Formatter.show_time = true\n\
+END\n\
+\n\
+true && curl -L https://www.opscode.com/chef/install.sh | bash\n\
+wget -q -O tcollector.tar.gz https://github.com/nimbusproject/phantom-cookbooks/archive/tcollector.tar.gz || curl -L -o tcollector.tar.gz https://github.com/nimbusproject/phantom-cookbooks/archive/tcollector.tar.gz\n\
+tar -C /var/chef/cookbooks -xvzf tcollector.tar.gz --strip-components=1\n\
+\n\
+cat > /etc/chef/node.json <<END\n\
+{\n\
+  \"tcollector\": {\n\
+';
+
+var PHANTOMIZE_USER_DATA_PART2 = '},\n\
+  "run_list": [ "recipe[git]", "recipe[tcollector]" ]\n\
+}\n\
+END\n\
+\n\
+chef-solo -l debug -j /etc/chef/node.json';
+
+function create_phantomize_user_data(use_openstack_script) {
+  script = PHANTOMIZE_USER_DATA_PART1;
+
+  if (use_openstack_script) {
+    script += '    "use_openstack_script": true\n';
+  } else {
+    script += '    "use_openstack_script": false\n';
+  }
+
+  script += PHANTOMIZE_USER_DATA_PART2;
+  return script;
+}
+
 $(document).ready(function() {
     $("#nav-launchconfig").addClass("active");
 
@@ -14,6 +60,19 @@ $(document).ready(function() {
         var launch_config = $(this).text();
         phantom_lc_change_lc_internal(launch_config);
         return false;
+    });
+
+    $("a[rel='popover']").on('click', function(e) {e.preventDefault(); return true;});
+
+    $("#phantom_lc_appliance").change(function() {
+        var appliance_name = $(this).val();
+        if (appliance_name) {
+            load_appliance(appliance_name);
+            phantom_lc_change_lc_internal(g_selected_lc);
+        }
+        else {
+            unload_appliance();
+        }
     });
 
     $("#cloud_table_body").on('click', 'tr', function(event){
@@ -148,11 +207,38 @@ function select_contextualization_method(context_type) {
         $("#phantom_lc_userdata").parent().show();
         $("#phantom_lc_contextualization").val("user_data");
     }
+    else if (context_type == "phantomize") {
+        $(".context-details").hide();
+        $("#phantom_lc_contextualization").val("phantomize");
+    }
     else {
         $(".context-details").hide();
         $("#phantom_lc_contextualization").val("none");
     }
 
+}
+
+function load_appliance(appliance_name) {
+    $phantom_lc_appliance_choice = $("#phantom_lc_appliance_choice");
+    $phantom_lc_appliance_choice.text(appliance_name);
+    $phantom_lc_appliance_choice.parent().show();
+    $("#phantom_lc_common_image_input").parent().hide();
+    $("#phantom_lc_user_images_choices").parent().hide();
+    g_selected_appliance = appliance_name;
+
+    var appliance = g_appliances[appliance_name];
+    g_lc_info[g_selected_lc]['cloud_params'] = appliance['cloud_params'];
+    g_lc_info[g_selected_lc]['appliance'] = appliance_name;
+}
+
+function unload_appliance() {
+    $("#phantom_lc_appliance_choice").parent().hide();
+    $("#phantom_lc_common_image_input").parent().show();
+    $("#phantom_lc_user_images_choices").parent().show();
+    g_selected_appliance = null;
+    if ('appliance' in g_lc_info[g_selected_lc]) {
+        delete g_lc_info[g_selected_lc]['appliance'];
+    }
 }
 
 function phantom_lc_buttons(enabled) {
@@ -334,20 +420,37 @@ function phantom_lc_change_lc_internal(lc_name) {
         if (g_arranged_cloud_values === undefined) {
             g_arranged_cloud_values = {};
         }
-        
+
+        if ('appliance' in lc) {
+            $("#phantom_lc_appliance").val(lc['appliance']);
+            load_appliance(lc['appliance']);
+        }
+        else {
+            $("#phantom_lc_appliance").val('');
+            unload_appliance();
+        }
+
 
         if (! ('contextualization_method' in lc)) {
             $("#phantom_lc_userdata").val(lc['user_data']);
             select_contextualization_method('user_data');
         }
         else if (lc['contextualization_method'] == 'user_data') {
+          if (typeof lc['user_data'] == 'string') {
             $("#phantom_lc_userdata").val(lc['user_data']);
             select_contextualization_method('user_data');
+          } else {
+            lc['contextualization_method'] = 'phantomize';
+            select_contextualization_method('phantomize');
+          }
         }
         else if (lc['contextualization_method'] == 'chef') {
             $("#phantom_lc_chef_runlist").val(JSON.stringify(lc['chef_runlist']));
             $("#phantom_lc_chef_attributes").val(JSON.stringify(lc['chef_attributes']));
             select_contextualization_method('chef');
+        }
+        else if (lc['contextualization_method'] == 'phantomize') {
+            select_contextualization_method('phantomize');
         }
         else {
             select_contextualization_method('none');
@@ -355,7 +458,7 @@ function phantom_lc_change_lc_internal(lc_name) {
     }
 
     $("#phantom_lc_max_vm").val("");
-    
+
     $("#phantom_lc_order").empty();
     var ordered = Array();
     for (var site in g_arranged_cloud_values) {
@@ -424,6 +527,7 @@ function phantom_lc_load_internal() {
             g_cloud_map[site.id]['user_images'] = site['user_images'];
             g_cloud_map[site.id]['public_images'] = site['public_images'];
             g_cloud_map[site.id]['instance_types'] = site['instance_types'];
+            g_cloud_map[site.id]['type'] = site['type'];
         }
     }
 
@@ -486,11 +590,33 @@ function phantom_lc_load_internal() {
         }
     }
 
+    var load_appliances_success = function(appliances) {
+        try {
+            g_appliances = {};
+            $("#phantom_lc_appliance").empty()
+                .append("<option></option>");
+
+            for(var i=0; i<appliances.length; i++) {
+                var appliance = appliances[i];
+                g_appliances[appliance.name] = appliance;
+                $("#phantom_lc_appliance")
+                    .append("<option>" + appliance.name + "</option>");
+            }
+        }
+        catch (err) {
+            phantom_alert("There was a problem loading the page.  Please try again later. ".concat(err.message));
+            $('#loading').hide();
+        }
+    }
+
     var credentials_url = make_url('credentials/sites')
     var cred_request = phantomGET(credentials_url);
 
     var sites_url = make_url('sites?details=true')
     var sites_request = phantomGET(sites_url)
+
+    var appliances_url = make_url('launchconfigurations?public=true')
+    var appliances_request = phantomGET(appliances_url);
 
     var lc_url = make_url('launchconfigurations')
     var lc_request = phantomGET(lc_url);
@@ -498,10 +624,11 @@ function phantom_lc_load_internal() {
     phantom_lc_buttons(false);
     phantom_info("Loading Launch Configurations");
 
-    $.when(cred_request, sites_request, lc_request)
-        .done(function(credentials, sites, lcs) {
+    $.when(cred_request, sites_request, appliances_request, lc_request)
+        .done(function(credentials, sites, appliances, lcs) {
             load_sites_success(sites[0]);
             load_credentials_success(credentials[0]);
+            load_appliances_success(appliances[0]);
             load_lc_success(lcs[0]);
         })
         .fail(function(err) {
@@ -531,6 +658,11 @@ function save_lc_values() {
     var chef_runlist = $("#phantom_lc_chef_runlist").val();
     var chef_attributes = $("#phantom_lc_chef_attributes").val();
     var user_data = $("#phantom_lc_userdata").val();
+    var appliance_name = $("#phantom_lc_appliance").val();
+
+    if (appliance_name) {
+        lc['appliance'] = appliance_name;
+    }
 
     if (contextualization_method == 'chef') {
 
@@ -575,6 +707,12 @@ function save_lc_values() {
         lc['user_data'] = user_data;
         delete lc['chef_runlist'];
         delete lc['chef_attributes'];
+    }
+    else if(contextualization_method == 'phantomize') {
+        lc['contextualization_method'] = 'phantomize';
+        delete lc['chef_runlist'];
+        delete lc['chef_attributes'];
+        delete lc['user_data'];
     }
     else {
         lc['contextualization_method'] = 'none';
@@ -621,7 +759,7 @@ function save_lc_values() {
         else {
             $("#phantom_lc_user_images_choices").parent().addClass("error");
         }
-        phantom_warning("You must select an image.");
+        phantom_warning("You must select an image, or an appliance.");
         return false;
     }
     if (!instance_type) {
@@ -683,6 +821,10 @@ function phantom_lc_save_click_internal() {
         'cloud_params': {},
     };
 
+    if ('appliance' in lc) {
+        data['appliance'] = lc['appliance'];
+    }
+
     if (! ('contextualization_method' in lc)) {
         data['contextualization_method'] = 'user_data';
         data['user_data'] = lc['user_data'];
@@ -695,6 +837,10 @@ function phantom_lc_save_click_internal() {
         data['contextualization_method'] = 'chef';
         data['chef_runlist'] = lc['chef_runlist'];
         data['chef_attributes'] = lc['chef_attributes'];
+    }
+    else if (lc['contextualization_method'] == 'phantomize') {
+        data['contextualization_method'] = 'user_data';
+        data['user_data'] = {};
     }
     else {
         data['contextualization_method'] = 'none';
@@ -720,6 +866,11 @@ function phantom_lc_save_click_internal() {
         site['instance_type'] = cloud_data['instance_type'];
         site['max_vms'] = cloud_data['max_vms'];
         site['common'] = cloud_data['common'];
+
+        if (lc['contextualization_method'] == 'phantomize') {
+          var cloud_description = g_cloud_map[site_name];
+          data['user_data'][site_name] = create_phantomize_user_data(cloud_description['type'] == 'openstack' && site_name != 'hotel-openstack');
+        }
     });
 
     var success_func = function(new_lc) {

@@ -10,6 +10,7 @@ from boto.exception import BotoServerError
 from ceiclient.client import DTRSClient, EPUMClient
 from ceiclient.connection import DashiCeiConnection
 from dashi.exceptions import DashiError
+from django.conf import settings
 
 from phantomweb.tevent import Pool, TimeoutError
 from phantomweb.models import RabbitInfoDB, PhantomUser
@@ -222,8 +223,8 @@ class UserObjectMySQL(UserObject):
                 domain_opts['scale_up_threshold'] = parameters['sensor_scale_up_threshold']
                 domain_opts['sample_function'] = 'Average'  # TODO: make configurable
                 domain_opts['sensor_type'] = 'opentsdb'  # TODO: make configurable
-                domain_opts['opentsdb_port'] = 4242  # TODO: make configurable
-                domain_opts['opentsdb_host'] = 'localhost'  # TODO: make configurable
+                domain_opts['opentsdb_port'] = int(settings.OPENTSDB_PORT)
+                domain_opts['opentsdb_host'] = settings.OPENTSDB_HOST
             except KeyError as k:
                 raise PhantomWebException("Mandatory parameter '%s' is missing" % k.args[0])
 
@@ -237,8 +238,8 @@ class UserObjectMySQL(UserObject):
 
                 domain_opts['sample_function'] = 'Average'  # TODO: make configurable
                 domain_opts['sensor_type'] = 'opentsdb'  # TODO: make configurable
-                domain_opts['opentsdb_port'] = 4242  # TODO: make configurable
-                domain_opts['opentsdb_host'] = 'localhost'  # TODO: make configurable
+                domain_opts['opentsdb_port'] = int(settings.OPENTSDB_PORT)
+                domain_opts['opentsdb_host'] = settings.OPENTSDB_HOST
             except KeyError as k:
                 raise PhantomWebException("Mandatory parameter '%s' is missing" % k.args[0])
         else:
@@ -345,6 +346,8 @@ class UserObjectMySQL(UserObject):
                 'iaas_instance_id': i.get('iaas_id', ''),
                 'lifecycle_state': i.get('state', ''),
                 'hostname': i.get('hostname', ''),
+                'public_ip': i.get('public_ip', ''),
+                'private_ip': i.get('private_ip', ''),
                 'cloud': i.get('site', ''),
                 'image_id': i.get('iaas_image', ''),
                 'instance_type': i.get('iaas_allocation', ''),
@@ -363,7 +366,7 @@ class UserObjectMySQL(UserObject):
             domains.append(domain_description)
         return domains
 
-    def create_dt(self, dt_name, cloud_params, context_params):
+    def create_dt(self, dt_name, cloud_params, context_params, appliance=None):
         dt = self.get_dt(dt_name)
         if dt is None:
             dt = {}
@@ -421,6 +424,12 @@ class UserObjectMySQL(UserObject):
         elif context_params.get('contextualization_method') == 'none':
             contextualization = dt['contextualization'] = {}
             contextualization['method'] = None
+
+        if appliance is not None:
+            dt['appliance'] = appliance
+        else:
+            if 'appliance' in dt:
+                del dt['appliance']
 
         if create:
             return self.dtrs.add_dt(self.username, dt_name, dt)
@@ -510,6 +519,35 @@ class UserObjectMySQL(UserObject):
             all_sites[site] = {'id': site, 'instance_types': INSTANCE_TYPES}
 
         if details is True:
+            pool = Pool()
+
+            instance_types_results = {}
+            for site in site_names:
+                instance_types_results[site] = pool.apply_async(site_client.describe_site, [self.access_key, site])
+            pool.close()
+
+            for site in site_names:
+                try:
+                    site_description = instance_types_results[site].get(IAAS_TIMEOUT)
+
+                    instance_types = site_description.get("instance_types")
+                    if instance_types is not None:
+                        all_sites[site]['instance_types'] = instance_types
+
+                    cloud_type = site_description.get("type")
+                    if cloud_type is not None:
+                        all_sites[site]['type'] = cloud_type
+
+                    image_generation = site_description.get("image_generation")
+                    if image_generation:
+                        all_sites[site]['image_generation'] = True
+                    else:
+                        all_sites[site]['image_generation'] = False
+                except TimeoutError:
+                    log.exception("Timed out getting list of instance types for %s" % site)
+                except Exception:
+                    log.exception("Unexpected error getting list of instance types for %s" % site)
+
             pool = Pool()
 
             public_results = {}

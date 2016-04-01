@@ -852,7 +852,7 @@ function show_domain_details(domain_id) {
     var sensor_data = domain.domain_metrics;
     for (var metric in sensor_data) {
         for (var sensor_type in sensor_data[metric]) {
-            if (sensor_type === "Series") {
+            if (sensor_type === "series") {
                 // Ignore series data because it is ugly :)
                 continue;
             }
@@ -938,6 +938,8 @@ function show_instance_details(instance_id) {
 
     var data = make_row("Instance ID", instance.iaas_instance_id) +
     make_row("Hostname", instance.hostname) +
+    make_row("Public IP", instance.public_ip) +
+    make_row("Private IP", instance.private_ip) +
     make_row("State", instance.lifecycle_state) +
     make_row("Cloud", instance_cloud) +
     make_row("Image", instance.image_id) +
@@ -947,7 +949,7 @@ function show_instance_details(instance_id) {
     var sensor_data = instance.sensor_data;
     for (var metric in sensor_data) {
         for (var sensor_type in sensor_data[metric]) {
-            if (sensor_type === "Series") {
+            if (sensor_type === "series" || sensor_type === "Series") {
                 // Ignore series data because it is ugly :)
                 continue;
             }

@@ -80,10 +80,11 @@ class SitesTestCase(unittest.TestCase):
                 self.assertEqual(len(content), 2)
                 self.assertIn({'credentials': '/api/dev/credentials/sites/site1', 'id': 'site1',
                     'uri': '/api/dev/sites/site1', 'user_images': ['image1'], 'public_images': [],
-                    'instance_types': ['m1.small', 'm1.large', 'm1.xlarge']}, content)
+                    'instance_types': ['m1.small', 'm1.large', 'm1.xlarge'], 'image_generation': False,
+                    'type': 'nimbus'}, content)
                 self.assertIn({'credentials': '/api/dev/credentials/sites/site2', 'id': 'site2',
                     'uri': '/api/dev/sites/site2', 'user_images': [], 'public_images': [],
-                    'instance_types': ['m1.small', 'm1.large', 'm1.xlarge']}, content)
+                    'instance_types': ['m1.small', 'm1.large', 'm1.xlarge'], 'image_generation': False}, content)
 
     def test_not_get_sites(self):
         c = Client()
@@ -372,7 +373,7 @@ class ChefCredentialsTestCase(unittest.TestCase):
                             }
                             response = c.put('/api/dev/credentials/chef/site2', json.dumps(post_content),
                                 content_type='application/json')
-                            self.assertEqual(response.status_code, 201)
+                            self.assertEqual(response.status_code, 200)
                             content = json.loads(response.content)
                             self.assertEqual(
                                 {
@@ -577,7 +578,13 @@ class CredentialsTestCase(unittest.TestCase):
                                     "access_key": "site3_access_key_id",
                                     "secret_key": "site3_secret_access_key",
                                     "key_name": "site3_phantom_ssh_key",
-                                    "uri": "/api/dev/credentials/sites/site3"
+                                    "uri": "/api/dev/credentials/sites/site3",
+                                    "nimbus_canonical_id": None,
+                                    "nimbus_user_cert": None,
+                                    "nimbus_user_key": None,
+                                    "openstack_password": None,
+                                    "openstack_project": None,
+                                    "openstack_username": None,
                                 },
                                 content)
 
@@ -621,7 +628,7 @@ class CredentialsTestCase(unittest.TestCase):
                             }
                             response = c.put('/api/dev/credentials/sites/site2', json.dumps(post_content),
                                 content_type='application/json')
-                            self.assertEqual(response.status_code, 201)
+                            self.assertEqual(response.status_code, 200)
                             content = json.loads(response.content)
                             self.assertEqual(
                                 {

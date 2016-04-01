@@ -1,7 +1,8 @@
+from django.core.mail import send_mail
 from django.core.context_processors import csrf
-from django.conf.urls.defaults import patterns
+from django.conf.urls import patterns, url, include
 from django.template import Context, loader
-import simplejson
+import json
 from django.http import HttpResponse, HttpResponseRedirect
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
@@ -10,21 +11,11 @@ from django.contrib.auth.forms import UserCreationForm
 from django.shortcuts import render
 from phantomweb.phantom_web_exceptions import PhantomRedirectException
 from phantomweb.util import get_user_object, LogEntryDecorator
-from phantomweb.workload import terminate_iaas_instance, phantom_lc_load, phantom_sites_add,\
-    phantom_sites_delete, phantom_sites_load, phantom_lc_delete, phantom_lc_save,\
-    phantom_domain_load, phantom_domain_terminate, phantom_domain_resize,\
-    phantom_domain_start, phantom_domain_details, phantom_instance_terminate, phantom_sensors_load
 from phantomweb.models import PhantomUser
 from django.contrib import admin
 
-
-@LogEntryDecorator
-@login_required
-def django_terminate_iaas_instance(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = terminate_iaas_instance(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
+ACTIVATE_ON_REGISTER = False
+ACTIVATION_EMAIL = ["nimbus@mcs.anl.gov", ]
 
 
 @LogEntryDecorator
@@ -40,69 +31,6 @@ def django_domain_html(request):
     except PhantomRedirectException, ex:
         return HttpResponseRedirect(ex.redir)
     return HttpResponse(t.render(c))
-
-
-@LogEntryDecorator
-@login_required
-def django_sensors_load(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_sensors_load(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_domain_load(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_domain_load(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_domain_start(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_domain_start(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_domain_resize(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_domain_resize(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_domain_details(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_domain_details(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_domain_terminate(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_domain_terminate(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_instance_terminate(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_instance_terminate(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
 
 
 @LogEntryDecorator
@@ -129,38 +57,12 @@ def django_lc_html(request):
         # no need to talk to the workload app here
         response_dict = {}
         response_dict.update(csrf(request))
+        response_dict['user'] = request.user
         t = loader.get_template('../templates/launchconfig.html')
         c = Context(response_dict)
     except PhantomRedirectException, ex:
         return HttpResponseRedirect(ex.redir)
     return HttpResponse(t.render(c))
-
-
-@LogEntryDecorator
-@login_required
-def django_lc_load(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_lc_load(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_lc_delete(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_lc_delete(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_lc_save(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_lc_save(request.POST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
 
 
 #
@@ -193,47 +95,58 @@ def django_publiclc_html(request):
 
 @LogEntryDecorator
 @login_required
-def django_sites_load(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_sites_load(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
+def django_imagegenerators_html(request):
+    response_dict = {}
+    response_dict.update(csrf(request))
+    response_dict['user'] = request.user
+    t = loader.get_template('../templates/imagegenerators.html')
+    c = Context(response_dict)
+
+    return HttpResponse(t.render(c))
 
 
-@LogEntryDecorator
-@login_required
-def django_sites_delete(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_sites_delete(request.GET, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
-@login_required
-def django_sites_add(request):
-    user_obj = get_user_object(request.user.username)
-    response_dict = phantom_sites_add(request.REQUEST, user_obj)
-    h = HttpResponse(simplejson.dumps(response_dict), mimetype='application/javascript')
-    return h
-
-
-@LogEntryDecorator
 def django_sign_up(request):
     if request.method == 'POST':
         form = UserCreationForm(request.POST)
         if form.is_valid():
-            if not form.cleaned_data['email']:
+            if not request.POST['email']:
                 form.errors['email'] = ['You must provide an email address']
                 return
+
             new_user = form.save()
 
             username = form.cleaned_data['username']
             password = form.cleaned_data['password1']
+            email = request.POST['email']
 
+<<<<<<< HEAD
             new_user = authenticate(username=username, password=password)
             login(request, new_user)
             return HttpResponseRedirect("/phantom/")
+=======
+            phantom_user = PhantomUser.objects.create(username=username, access_key_id=username)
+            phantom_user.save()
+
+            if ACTIVATE_ON_REGISTER:
+                new_user.email = email
+                new_user.save()
+                new_user = authenticate(username=username, password=password)
+                login(request, new_user)
+                return HttpResponseRedirect("/phantom/")
+            else:
+                new_user.is_active = False
+                new_user.email = email
+                new_user.save()
+
+                send_mail('New Phantom User Needs Activation',
+                    'New user %s (%s) needs activation.' % (username, email),
+                    'nimbus@mcs.anl.gov', ACTIVATION_EMAIL, fail_silently=False)
+
+                t = loader.get_template('../templates/registration/activation.html')
+                c = Context({'user': username, 'email': email})
+                return HttpResponse(t.render(c))
+
+>>>>>>> refs/remotes/nimbusproject/master
     else:
         form = UserCreationForm()
     return render(request, "../templates/registration/signup.html", {
@@ -252,13 +165,14 @@ def django_change_password(request):
         except User.DoesNotExist:
             return HttpResponse("USER_NOT_FOUND", status=500)
 
-        old_password = request.POST.get('old_password')
+        request_json = json.loads(request.body)
 
+        old_password = request_json.get('old_password')
         if not user.check_password(old_password):
             return HttpResponse("BAD_OLD_PASSWORD", status=500)
 
-        new_password = request.POST.get('new_password')
-        new_password_confirmation = request.POST.get('new_password_confirmation')
+        new_password = request_json.get('new_password')
+        new_password_confirmation = request_json.get('new_password_confirmation')
 
         if new_password != new_password_confirmation:
             return HttpResponse("PASSWORDS_DO_NOT_MATCH", status=500)
