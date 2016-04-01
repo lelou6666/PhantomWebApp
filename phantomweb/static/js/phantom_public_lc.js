@@ -3,6 +3,7 @@ var user_launch_configs = [];
 var lc_to_import = null;
 
 $(document).ready(function() {
+    $("#nav-appliances").addClass("active");
 
     $("#public_lc_table > tr").hide();
     $("#show-all-lc").hide();
@@ -103,9 +104,11 @@ function import_lc(lc_id_to_import, new_name) {
         window.location.href = "/phantom/launchconfig#" + imported_lc.name;
     }
 
-    var import_lc_failure = function(error) {
+    var import_lc_failure = function(url, error) {
         phantom_alert("Problem importing launch config! " + error);
-        console.log(error);
+        $('a').removeClass('disabled');
+        $import_lc_name.parent().parent().show()
+        $("#importing").hide();
     }
 
     var lc_to_import = available_launch_configs[lc_id_to_import];
@@ -113,9 +116,11 @@ function import_lc(lc_id_to_import, new_name) {
     delete lc_to_import['url'];
     delete lc_to_import['owner'];
     delete lc_to_import['description'];
+    lc_to_import['appliance'] = lc_to_import['name'];
     lc_to_import['name'] = new_name;
 
     var url = make_url("launchconfigurations");
+    console.log(lc_to_import);
     phantomPOST(url, lc_to_import, import_lc_success, import_lc_failure);
     $("#row-" + lc_id_to_import + " button.import").html("Importing...");
 }

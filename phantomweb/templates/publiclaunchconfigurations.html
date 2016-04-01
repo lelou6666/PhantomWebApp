@@ -1,5 +1,5 @@
 {% extends "../templates/base.html" %}
-{% block title %}Public Launch Configurations - Phantom{% endblock %}
+{% block title %}Appliances - Phantom{% endblock %}
 {% block headcss %}
     <link rel='stylesheet' type='text/css' media='all' href='/static/css/phantom_profile.css' />
 {% endblock %}
@@ -22,6 +22,8 @@
     <h3>Import a Launch Configuration</h3>
   </div>
   <div class="modal-body">
+    <div id="alert-container">
+    </div>
     <form class="form" id="add-lc-form">
       <fieldset>
         <div class="control-group" >
@@ -43,8 +45,8 @@
 </div>
 
 <div class="container-fluid inner-container">
-  <h3>Public Launch Configurations</h3>
-  <p>These are launch configurations that have been shared by other Phantom Users.
+  <h3>Phantom Appliances</h3>
+  <p>These appliances are launch configurations that have been shared by other Phantom Users.
   If you click the Import button, they will be available in your
   <a href="/phantom/launchconfig">Launch Configuration</a> page, ready for you to
   use in your <a href="/phantom/domain">Domains</a>.
@@ -60,8 +62,6 @@
       <div id="loading" class="progress progress-striped active">
         <div class="bar" style="width: 100%"></div>
       </div>
-    </div>
-    <div class="span10" id="alert-container">
     </div>
   </div>
 </div>
