@@ -421,6 +421,7 @@ function phantom_image_builds_internal() {
       var row = make_image_build_table_row(image_build);
       table_body.append(row);
     }
+<<<<<<< HEAD
 
     //var domain_name = $("#phantom_domain_name_label").text();
     //if (!domain_name || ! g_domain_data[domain_name]) {
@@ -466,6 +467,8 @@ function phantom_image_builds_internal() {
     //var url = make_url("domains/" + domain_id + "/instances");
     //g_current_details_request =  phantomGET(url, success_func, error_func);
     //
+=======
+>>>>>>> refs/remotes/nimbusproject/master
     if ("id" in ig) {
       get_phantom_image_builds(ig["id"]);
     }
@@ -548,26 +551,33 @@ function phantom_ig_change_ig_internal(ig_name) {
     }
 
     phantom_image_builds_internal();
+<<<<<<< HEAD
 
     //var ib_url = make_url("imagegenerators/" + ig["id"] + "/builds")
     //var image_builds = phantomGET(ib_url, success_func, error_func);
     //setTimeout(function() {
       //check_phantom_image_build(ig_id, new_image_build['id'])
     //}, 1000);
+=======
+>>>>>>> refs/remotes/nimbusproject/master
 }
 
 function get_phantom_image_builds(ig_id) {
     var success_func = function(image_builds) {
       try {
           clear_phantom_alerts();
+<<<<<<< HEAD
           //$("#phantom_ig_name_select").empty();
           //$("#phantom_ig_cloud").empty();
+=======
+>>>>>>> refs/remotes/nimbusproject/master
           g_ib_info[ig_id] = {}
           for (var i = 0; i < image_builds.length; i++) {
               var image_build = image_builds[i];
               g_ib_info[ig_id][image_build["id"]] = image_build;
           }
           phantom_start_builds_timer();
+<<<<<<< HEAD
 
           //phantom_ig_load_ig_names();
           //phantom_ig_load_cloud_names();
@@ -599,12 +609,15 @@ function get_phantom_image_builds(ig_id) {
               //}
           //}
 
+=======
+>>>>>>> refs/remotes/nimbusproject/master
           phantom_ig_buttons(true);
       }
       catch (err) {
           phantom_alert("There was a problem loading the page.  Please try again later. ".concat(err.message));
           $('#loading').hide();
       }
+<<<<<<< HEAD
       // FIXME
       //if (image_build["ready"] === true) {
         //switch (image_build["status"]) {
@@ -635,6 +648,8 @@ function get_phantom_image_builds(ig_id) {
           //get_phantom_image_builds(ig_id)
         //}, 1000);
       //}
+=======
+>>>>>>> refs/remotes/nimbusproject/master
     }
 
     var error_func = function(obj, message) {

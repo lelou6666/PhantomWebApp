@@ -466,7 +466,11 @@ function phantom_cloud_edit_add_click() {
             .parent().parent().addClass("error");
         return;
       }
+<<<<<<< HEAD
       if (!openstackPassword) {
+=======
+      if (!openstackPassword && nameCtl != "hotel-openstack") {
+>>>>>>> refs/remotes/nimbusproject/master
         $("#phantom_cloud_edit_openstack_password")
             .after('<span class="help-inline">You must set an OpenStack password</span>')
             .parent().parent().addClass("error");
@@ -514,7 +518,11 @@ function phantom_cloud_edit_add_click() {
       payload['openstack_password'] = openstackPassword;
     }
     if (openstackProject) {
+<<<<<<< HEAD
       payload['openstack_project'] = openstack_project;
+=======
+      payload['openstack_project'] = openstackProject;
+>>>>>>> refs/remotes/nimbusproject/master
     }
     phantomPOST(url, payload, success_func, error_func);
 }
@@ -546,7 +554,11 @@ function phantom_cloud_edit_change_cloud_internal(selected_cloud_name)  {
     document.getElementById("phantom_cloud_div_openstack_password").style.display = 'none';
     document.getElementById("phantom_cloud_div_openstack_project").style.display = 'none';
 
+<<<<<<< HEAD
     if (credentials["image_generation"]) {
+=======
+    if (credentials && credentials["image_generation"]) {
+>>>>>>> refs/remotes/nimbusproject/master
       if (credentials["type"] == "nimbus") {
         document.getElementById("phantom_cloud_div_nimbus_usercert").style.display = 'block';
         document.getElementById("phantom_cloud_div_nimbus_userkey").style.display = 'block';
@@ -577,6 +589,7 @@ function phantom_cloud_edit_change_cloud_internal(selected_cloud_name)  {
         $("#phantom_cloud_edit_secret").val(credentials['secret_key']);
         if ("nimbus_user_cert" in credentials) {
           $("#phantom_cloud_edit_nimbus_usercert").text(credentials['nimbus_user_cert']);
+<<<<<<< HEAD
         }
         if ("nimbus_user_key" in credentials) {
           $("#phantom_cloud_edit_nimbus_userkey").text(credentials['nimbus_user_key']);
@@ -592,6 +605,35 @@ function phantom_cloud_edit_change_cloud_internal(selected_cloud_name)  {
         }
         if ("openstack_project" in credentials) {
           $("#phantom_cloud_edit_openstack_project").val(credentials['openstack_project']);
+=======
+        } else {
+          $("#phantom_cloud_edit_nimbus_usercert").text("");
+        }
+        if ("nimbus_user_key" in credentials) {
+          $("#phantom_cloud_edit_nimbus_userkey").text(credentials['nimbus_user_key']);
+        } else {
+          $("#phantom_cloud_edit_nimbus_userkey").text("");
+        }
+        if ("nimbus_canonical_id" in credentials) {
+          $("#phantom_cloud_edit_nimbus_canonical_id").val(credentials['nimbus_canonical_id']);
+        } else {
+          $("#phantom_cloud_edit_nimbus_canonical_id").val("");
+        }
+        if ("openstack_username" in credentials) {
+          $("#phantom_cloud_edit_openstack_username").val(credentials['openstack_username']);
+        } else {
+          $("#phantom_cloud_edit_openstack_username").val("");
+        }
+        if ("openstack_password" in credentials) {
+          $("#phantom_cloud_edit_openstack_password").val(credentials['openstack_password']);
+        } else {
+          $("#phantom_cloud_edit_openstack_password").val("");
+        }
+        if ("openstack_project" in credentials) {
+          $("#phantom_cloud_edit_openstack_project").val(credentials['openstack_project']);
+        } else {
+          $("#phantom_cloud_edit_openstack_project").val("");
+>>>>>>> refs/remotes/nimbusproject/master
         }
         if (credentials.status_msg) {
             phantom_alert(val.status_msg);
@@ -756,6 +798,12 @@ function phantom_cloud_edit_load_sites() {
         });
 
     phantom_cloud_edit_enable(false);
+
+    if (g_selected_cloud == "hotel-openstack") {
+      $("#phantom_cloud_edit_openstack_password").attr("disabled", "disabled");
+    } else {
+      $("#phantom_cloud_edit_openstack_password").removeAttr("disabled", "disabled");
+    }
 }
 
 function phantom_cloud_edit_load_page() {

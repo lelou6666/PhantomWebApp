@@ -47,7 +47,11 @@ def openstack_builder_config(cloud_name, site, site_credentials, config):
         "ssh_username": config["ssh_username"],
         "image_name": config["new_image_name"],
         "source_image": config["image_id"],
+<<<<<<< HEAD
         "flavor": "1", # FIXME
+=======
+        "flavor": "1", # FIXME This flavor is hardcoded at the moment
+>>>>>>> refs/remotes/nimbusproject/master
         "project": site_credentials["openstack_project"],
         "region": site["region"]
     }

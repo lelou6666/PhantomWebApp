@@ -1093,7 +1093,10 @@ def image_build_resource(request, image_generator_id, build_id):
         return HttpResponse(json.dumps(image_build), mimetype='application/javascript')
 
     elif request.method == "PUT":
+<<<<<<< HEAD
         # TO IMPLEMENT OR REMOVE
+=======
+>>>>>>> refs/remotes/nimbusproject/master
         response = get_image_generator(image_generator_id)
         if response is None or response.get('owner') != username:
             return HttpResponseNotFound('Image generator %s not found' % image_generator_id, mimetype='application/javascript')

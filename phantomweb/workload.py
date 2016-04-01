@@ -131,6 +131,11 @@ def add_packer_credentials(username, cloud, nimbus_user_cert=None, nimbus_user_k
                     key=nimbus_user_key, canonical_id=nimbus_canonical_id, openstack_username=" ", openstack_password=" ",
                     openstack_project=" ")
         elif openstack_username is not None:
+<<<<<<< HEAD
+=======
+            if openstack_password is None:
+                openstack_password = " "
+>>>>>>> refs/remotes/nimbusproject/master
             pc = PackerCredential.objects.create(username=username, cloud=cloud, certificate=" ",
                     key=" ", canonical_id=" ", openstack_username=openstack_username,
                     openstack_password=openstack_password, openstack_project=openstack_project)
