@@ -1,19 +1,26 @@
 from django.contrib import admin
 
+<<<<<<< HEAD
 from phantomweb.models import PhantomInfoDB, RabbitInfoDB, LaunchConfigurationDB,\
     HostMaxPairDB, PhantomUser, LaunchConfiguration, PublicLaunchConfiguration
-
-
-class PhantomInfoAdmin(admin.ModelAdmin):
-    pass
-
-admin.site.register(PhantomInfoDB, PhantomInfoAdmin)
+=======
+from phantomweb.models import RabbitInfoDB, LaunchConfigurationDB,\
+    HostMaxPairDB, PhantomUser, LaunchConfiguration, PublicLaunchConfiguration, \
+    ImageGenerator, ImageGeneratorScript, ImageGeneratorCloudConfig, ImageBuild, \
+    PackerCredential, ImageBuildArtifact
+>>>>>>> refs/remotes/nimbusproject/master
 
 
 class RabbitInfoAdmin(admin.ModelAdmin):
     pass
 
 admin.site.register(RabbitInfoDB, RabbitInfoAdmin)
+
+
+class AutoScaleLaunchConfigurationAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(LaunchConfigurationDB, AutoScaleLaunchConfigurationAdmin)
 
 
 class AutoScaleLaunchConfigurationAdmin(admin.ModelAdmin):
@@ -44,3 +51,39 @@ class PhantomUserAdmin(admin.ModelAdmin):
     pass
 
 admin.site.register(PhantomUser, PhantomUserAdmin)
+
+
+class PackerCredentialAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(PackerCredential, PackerCredentialAdmin)
+
+
+class ImageGeneratorAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageGenerator, ImageGeneratorAdmin)
+
+
+class ImageGeneratorScriptAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageGeneratorScript, ImageGeneratorScriptAdmin)
+
+
+class ImageGeneratorCloudConfigAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageGeneratorCloudConfig, ImageGeneratorCloudConfigAdmin)
+
+
+class ImageBuildAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageBuild, ImageBuildAdmin)
+
+
+class ImageBuildArtifactAdmin(admin.ModelAdmin):
+    pass
+
+admin.site.register(ImageBuildArtifact, ImageBuildArtifactAdmin)

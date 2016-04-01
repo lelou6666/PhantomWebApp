@@ -25,6 +25,7 @@ new_lc = {
     'name': name,
     'cloud_params': {
         cloud: {
+            "common": "false",
             "image_id": image_id,
             "instance_type": it,
             "max_vms": max_vms,
@@ -33,7 +34,9 @@ new_lc = {
             "user_data": None
         }
     },
-    'contextualization_method': None
+    'contextualization_method': 'chef',
+    'chef_runlist': '["base_image"]',
+    'chef_attributes': "{}"
 }
 
 r = requests.post("%s/launchconfigurations" % api_url, data=json.dumps(new_lc), auth=(user_id, token))

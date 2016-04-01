@@ -1,6 +1,15 @@
+<<<<<<< HEAD
 var available_launch_configs = [];
 
 $(document).ready(function() {
+=======
+var available_launch_configs = {};
+var user_launch_configs = [];
+var lc_to_import = null;
+
+$(document).ready(function() {
+    $("#nav-appliances").addClass("active");
+>>>>>>> refs/remotes/nimbusproject/master
 
     $("#public_lc_table > tr").hide();
     $("#show-all-lc").hide();
@@ -16,8 +25,50 @@ $(document).ready(function() {
     });
 
     $("#public_lc_table").on("click", "button.import", function() {
+<<<<<<< HEAD
         var id = $(this).data('name');
         import_lc(id);
+=======
+        lc_to_import = $(this).data('name');
+        $('#import-lc-modal').modal('show');
+        return false;
+    });
+
+    $("#import-lc-modal").on('shown', function() {
+        $("#import-lc-name").focus();
+        var lc = available_launch_configs[lc_to_import];
+        if (lc && lc.name &&  user_launch_configs.indexOf(lc.name) < 0) {
+            $("#import-lc-name").val(lc.name);
+            $("#import-lc-name").select();
+        }
+    });
+
+    var import_lc_verify = function() {
+        $(".help-inline").remove();
+        $import_lc_name = $("#import-lc-name");
+
+        var newname = $import_lc_name.val();
+        $import_lc_name.parent().parent().removeClass('error');
+
+        if (user_launch_configs.indexOf(newname) > -1) {
+            $import_lc_name.parent().parent().addClass("error");
+            $import_lc_name.after("<span class='help-inline'>You already have a Launch Config by this name.</span>");
+            return false;
+        }
+        $('a').addClass('disabled');
+        $import_lc_name.parent().parent().hide()
+        $("#importing").show();
+        import_lc(lc_to_import, newname);
+        return false;
+    };
+
+    $("#import-launch-configuration").click(function() {
+        import_lc_verify();
+    });
+
+    $("#add-lc-form").submit(function() {
+        import_lc_verify();
+>>>>>>> refs/remotes/nimbusproject/master
         return false;
     });
 
@@ -29,6 +80,17 @@ $(document).ready(function() {
 
 function load_public_lcs() {
 
+<<<<<<< HEAD
+=======
+    var load_all_lc_success = function(launchconfigs) {
+
+        for (var i=0; i<launchconfigs.length; i++) {
+            var lc = launchconfigs[i];
+            user_launch_configs.push(lc.name);
+        }
+    }
+
+>>>>>>> refs/remotes/nimbusproject/master
     var load_lc_success = function(launchconfigs) {
         for (var i=0; i<launchconfigs.length; i++) {
             var lc = launchconfigs[i];
@@ -38,6 +100,12 @@ function load_public_lcs() {
 
         select_from_hash();
         $("#loading").hide();
+<<<<<<< HEAD
+=======
+
+        var lc_url = make_url('launchconfigurations')
+        phantomGET(lc_url, load_all_lc_success, load_lc_failure);
+>>>>>>> refs/remotes/nimbusproject/master
     }
 
     var load_lc_failure = function(error) {
@@ -48,14 +116,26 @@ function load_public_lcs() {
     phantomGET(lc_url, load_lc_success, load_lc_failure);
 }
 
+<<<<<<< HEAD
 function import_lc(lc_id_to_import) {
+=======
+function import_lc(lc_id_to_import, new_name) {
+>>>>>>> refs/remotes/nimbusproject/master
     var import_lc_success = function(imported_lc) {
         window.location.href = "/phantom/launchconfig#" + imported_lc.name;
     }
 
+<<<<<<< HEAD
     var import_lc_failure = function(error) {
         phantom_error("Problem importing launch config! " + error);
         console.log(error);
+=======
+    var import_lc_failure = function(url, error) {
+        phantom_alert("Problem importing launch config! " + error);
+        $('a').removeClass('disabled');
+        $import_lc_name.parent().parent().show()
+        $("#importing").hide();
+>>>>>>> refs/remotes/nimbusproject/master
     }
 
     var lc_to_import = available_launch_configs[lc_id_to_import];
@@ -63,8 +143,16 @@ function import_lc(lc_id_to_import) {
     delete lc_to_import['url'];
     delete lc_to_import['owner'];
     delete lc_to_import['description'];
+<<<<<<< HEAD
 
     var url = make_url("launchconfigurations");
+=======
+    lc_to_import['appliance'] = lc_to_import['name'];
+    lc_to_import['name'] = new_name;
+
+    var url = make_url("launchconfigurations");
+    console.log(lc_to_import);
+>>>>>>> refs/remotes/nimbusproject/master
     phantomPOST(url, lc_to_import, import_lc_success, import_lc_failure);
     $("#row-" + lc_id_to_import + " button.import").html("Importing...");
 }

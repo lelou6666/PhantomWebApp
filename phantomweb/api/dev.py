@@ -1,3 +1,4 @@
+import re
 import base64
 import json
 import logging
@@ -10,6 +11,7 @@ from django.http import HttpResponse, HttpResponseBadRequest, \
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
+from phantomweb.urls import ACCEPTED_RESOURCE_PATTERN
 from phantomweb.util import get_user_object, str_to_bool
 from phantomweb.phantom_web_exceptions import PhantomWebException
 from phantomweb.workload import phantom_get_sites, get_all_launch_configurations, \
@@ -17,12 +19,30 @@ from phantomweb.workload import phantom_get_sites, get_all_launch_configurations
     update_launch_configuration, get_all_domains, create_domain, get_domain_by_name, get_domain, \
     remove_domain, modify_domain, get_domain_instances, get_domain_instance, \
     terminate_domain_instance, get_sensors, remove_launch_configuration, \
-    get_launch_configuration_object, get_all_keys
+    get_launch_configuration_object, get_all_keys, upload_key, get_all_image_generators, create_image_generator, \
+    get_image_generator, get_image_generator_by_name, modify_image_generator, remove_image_generator, \
+    create_image_build, get_image_build, get_all_image_builds, remove_image_build, get_all_packer_credentials, \
+    add_packer_credentials
 
 log = logging.getLogger('phantomweb.api.dev')
 
 DOC_URI = "http://www.nimbusproject.org/doc/phantom/latest/api.html"
 API_VERSION = 'dev'
+
+
+def optional_pretty_print(f):
+    def wrap(request, *args, **kwargs):
+        response = f(request, *args, **kwargs)
+        pretty = str_to_bool(request.GET.get('pretty', 'false'))
+        if response.status_code == 200 and pretty:
+            try:
+                content_json = json.loads(response.content)
+                pretty_json = json.dumps(content_json, indent=4, separators=(',', ': '))
+                response.content = pretty_json
+            except:
+                pass
+        return response
+    return wrap
 
 
 def basic_http_auth(f):
@@ -92,7 +112,7 @@ def token_or_logged_in_required(view_func):
                 login(request, user)
                 return view_func(request, *args, **kwargs)
 
-        return HttpResponseForbidden()
+        return HttpResponseForbidden("Authorization Required")
     return _wrapped_view
 
 
@@ -105,6 +125,7 @@ def has_all_required_params(params, content):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET"])
 def sites(request):
     user_obj = get_user_object(request.user.username)
@@ -112,7 +133,7 @@ def sites(request):
     all_sites = phantom_get_sites(request.GET, user_obj, details=details)
     response_list = []
     for site_name, site_dict in all_sites.iteritems():
-        site_dict["credentials"] = "/api/%s/credentials/%s" % (API_VERSION, site_name)
+        site_dict["credentials"] = "/api/%s/credentials/sites/%s" % (API_VERSION, site_name)
         site_dict["uri"] = "/api/%s/sites/%s" % (API_VERSION, site_name)
         if details:
             if site_dict.get('user_images') is None:
@@ -125,6 +146,7 @@ def sites(request):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET"])
 def site_resource(request, site):
     user_obj = get_user_object(request.user.username)
@@ -133,9 +155,15 @@ def site_resource(request, site):
     if site in all_sites:
         response_dict = {
             "id": site,
-            "credentials": "/api/%s/credentials/%s" % (API_VERSION, site),
+            "credentials": "/api/%s/credentials/sites/%s" % (API_VERSION, site),
+            "instance_types": all_sites[site].get('instance_types', []),
             "uri": "/api/%s/sites/%s" % (API_VERSION, site)
         }
+        if details:
+            if response_dict.get('user_images') is None:
+                response_dict['user_images'] = []
+            if response_dict.get('public_images') is None:
+                response_dict['public_images'] = []
         h = HttpResponse(json.dumps(response_dict), mimetype='application/javascript')
     else:
         h = HttpResponseNotFound('Site %s not found' % site, mimetype='application/javascript')
@@ -143,6 +171,194 @@ def site_resource(request, site):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["POST"])
+def site_ssh_key_resource(request, site):
+    user_obj = get_user_object(request.user.username)
+    try:
+        content = json.loads(request.body)
+    except:
+        msg = "Bad request (%s). No JSON. See API docs: %s" % (request.body, DOC_URI)
+        return HttpResponseBadRequest(msg)
+
+    required_params = ["name", "key"]
+    if not has_all_required_params(required_params, content):
+        return HttpResponseBadRequest("Bad request. Do not have all required parameters (%s)" % required_params)
+
+    name = content['name']
+    key = content['key']
+
+    cloud = user_obj.get_cloud(site)
+    upload_key(cloud, name, key)
+
+    h = HttpResponse(request.body, status=201)
+    return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "POST"])
+def chef_credentials(request):
+    user_obj = get_user_object(request.user.username)
+
+    if request.method == "GET":
+        all_credentials = user_obj.get_chef_credentials()
+
+        response_list = []
+        for credential_name, credential in all_credentials.iteritems():
+            credentials_dict = {
+                "id": credential_name,
+                "server_url": credential['url'],
+                "client_name": credential.get('client_name', 'admin'),
+                "validation_client_name": credential.get('validation_client_name', 'chef-validator'),
+                "client_key": credential['client_key'],
+                "validator_key": credential['validator_key'],
+                "uri": "/api/%s/credentials/chef/%s" % (API_VERSION, credential_name)
+            }
+            response_list.append(credentials_dict)
+        h = HttpResponse(json.dumps(response_list), mimetype='application/javascript')
+    elif request.method == "POST":
+        try:
+            content = json.loads(request.body)
+        except:
+            msg = "Bad request (%s). No JSON. See API docs: %s" % (request.body, DOC_URI)
+            return HttpResponseBadRequest(msg)
+
+        required_params = ["id", "server_url", "client_name", "client_key", "validator_key"]
+        if not has_all_required_params(required_params, content):
+            return HttpResponseBadRequest("Bad request. Do not have all required parameters (%s)" % required_params)
+
+        name = content["id"]
+        url = content["server_url"]
+        client_name = content["client_name"]
+        validation_client_name = content.get("validation_client_name", "chef-validator")
+        client_key = content["client_key"]
+        validator_key = content["validator_key"]
+
+        if re.search("^%s+$" % ACCEPTED_RESOURCE_PATTERN, name) is None:
+            return HttpResponseBadRequest("%s isn't an acceptable id. Must match %s" % (
+                name, ACCEPTED_RESOURCE_PATTERN))
+
+        # Check that the site exists
+        all_credentials = user_obj.get_chef_credentials()
+        if name in all_credentials:
+            return HttpResponseRedirect("/api/%s/credentials/chef/%s" % (API_VERSION, name))
+
+        response_dict = {
+            "id": name,
+            "server_url": url,
+            "validation_client_name": validation_client_name,
+            "client_name": client_name,
+            "client_key": client_key,
+            "validator_key": validator_key,
+            "uri": "/api/%s/credentials/chef/%s" % (API_VERSION, name)
+        }
+
+        # Add credentials to DTRS
+        try:
+            user_obj.add_chef_credentials(name, url, client_name, client_key, validator_key,
+                    validation_client_name=validation_client_name)
+        except:
+            msg = "Failed to add credentials for %s" % name
+            raise
+            log.exception(msg)
+            return HttpResponseServerError(msg)
+
+        h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
+
+    return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "PUT", "DELETE"])
+def chef_credentials_resource(request, site):
+    user_obj = get_user_object(request.user.username)
+
+    if request.method == "GET":
+        all_credentials = user_obj.get_chef_credentials()
+        credential = all_credentials.get(site)
+
+        if credential is not None:
+            response_dict = {
+                "id": site,
+                "server_url": credential['url'],
+                "client_name": credential['client_name'],
+                "client_key": credential['client_key'],
+                "validator_key": credential['validator_key'],
+                "validation_client_name": credential.get('validation_client_name', 'chef-validator'),
+                "uri": "/api/%s/credentials/chef/%s" % (API_VERSION, site)
+            }
+            h = HttpResponse(json.dumps(response_dict), mimetype='application/javascript')
+        else:
+            h = HttpResponseNotFound('Credentials for site %s not found' % site, mimetype='application/javascript')
+        return h
+    elif request.method == "PUT":
+        try:
+            content = json.loads(request.body)
+        except:
+            msg = "Bad request (%s). No JSON. See API docs: %s" % (request.body, DOC_URI)
+            return HttpResponseBadRequest(msg)
+
+        required_params = ["server_url", "client_key", "client_name", "validator_key"]
+        if not has_all_required_params(required_params, content):
+            return HttpResponseBadRequest("Bad request. Do not have all required parameters (%s)" % required_params)
+
+        name = site
+        url = content["server_url"]
+        client_name = content["client_name"]
+        validation_client_name = content.get("validation_client_name", 'chef-validator')
+        client_key = content["client_key"]
+        validator_key = content["validator_key"]
+
+        # Check that the credentials exist
+        all_credentials = user_obj.get_chef_credentials()
+        if site not in all_credentials:
+            return HttpResponseBadRequest()
+
+        response_dict = {
+            "id": name,
+            "server_url": url,
+            "client_name": client_name,
+            "client_key": client_key,
+            "validator_key": validator_key,
+            "validation_client_name": validation_client_name,
+            "uri": "/api/%s/credentials/chef/%s" % (API_VERSION, name)
+        }
+
+        # Add credentials to DTRS
+        try:
+            user_obj.add_chef_credentials(name, url, client_name, client_key, validator_key,
+                    validation_client_name=validation_client_name)
+        except:
+            log.exception("Failed to add credentials for site %s" % site)
+            return HttpResponseServerError()
+
+        h = HttpResponse(json.dumps(response_dict), mimetype='application/javascript')
+
+        return h
+
+    elif request.method == "DELETE":
+        # Check that the credentials exist
+        all_credentials = user_obj.get_chef_credentials()
+        if site not in all_credentials:
+            return HttpResponseBadRequest()
+
+        # Remove credentials from DTRS
+        try:
+            user_obj.delete_chef_credentials(site)
+        except:
+            msg = "Failed to remove credentials for site %s" % site
+            log.exception(msg)
+            return HttpResponseServerError(msg)
+
+        h = HttpResponse(status=204)
+
+        return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "POST"])
 def credentials(request):
     user_obj = get_user_object(request.user.username)
@@ -152,6 +368,7 @@ def credentials(request):
         details = str_to_bool(request.GET.get('details', 'false'))
         if details is True:
             keys = get_all_keys(all_clouds)
+            packer_credentials = get_all_packer_credentials(request.user.username, all_clouds)
 
         response_list = []
         for cloud in all_clouds.values():
@@ -161,11 +378,25 @@ def credentials(request):
                 "access_key": cloud.iaas_key,
                 "secret_key": cloud.iaas_secret,
                 "key_name": cloud.keyname,
-                "uri": "/api/%s/credentials/%s" % (API_VERSION, credentials_name)
+                "uri": "/api/%s/credentials/sites/%s" % (API_VERSION, credentials_name)
             }
             if details is True:
                 credentials_dict["available_keys"] = keys[cloud.cloudname]
+                packer_cloud_creds = packer_credentials[cloud.cloudname]
+                if "usercert" in packer_cloud_creds:
+                    credentials_dict["nimbus_user_cert"] = packer_cloud_creds["usercert"]
+                if "userkey" in packer_cloud_creds:
+                    credentials_dict["nimbus_user_key"] = packer_cloud_creds["userkey"]
+                if "canonical_id" in packer_cloud_creds:
+                    credentials_dict["nimbus_canonical_id"] = packer_cloud_creds["canonical_id"]
+                if "openstack_username" in packer_cloud_creds:
+                    credentials_dict["openstack_username"] = packer_cloud_creds["openstack_username"]
+                if "openstack_password" in packer_cloud_creds:
+                    credentials_dict["openstack_password"] = packer_cloud_creds["openstack_password"]
+                if "openstack_project" in packer_cloud_creds:
+                    credentials_dict["openstack_project"] = packer_cloud_creds["openstack_project"]
             response_list.append(credentials_dict)
+        log.info(response_list)
         h = HttpResponse(json.dumps(response_list), mimetype='application/javascript')
     elif request.method == "POST":
         try:
@@ -182,18 +413,29 @@ def credentials(request):
         access_key = content["access_key"]
         secret_key = content["secret_key"]
         key_name = content["key_name"]
+        nimbus_user_cert = content.get("nimbus_user_cert")
+        nimbus_user_key = content.get("nimbus_user_key")
+        nimbus_canonical_id = content.get("nimbus_canonical_id")
+        openstack_username = content.get("openstack_username")
+        openstack_password = content.get("openstack_password")
+        openstack_project = content.get("openstack_project")
 
         # Check that the site exists
         all_sites = phantom_get_sites(request.POST, user_obj)
         if site not in all_sites:
-            return HttpResponseBadRequest()
+            return HttpResponseBadRequest("%s doesn't seem to exist. I know about %s" % (
+                site, all_sites))
+
+        if re.search("^%s+$" % ACCEPTED_RESOURCE_PATTERN, site) is None:
+            return HttpResponseBadRequest("%s isn't an acceptable id. Must match %s" % (
+                site, ACCEPTED_RESOURCE_PATTERN))
 
         response_dict = {
             "id": site,
             "access_key": access_key,
             "secret_key": secret_key,
             "key_name": key_name,
-            "uri": "/api/%s/credentials/%s" % (API_VERSION, site)
+            "uri": "/api/%s/credentials/sites/%s" % (API_VERSION, site)
         }
 
         # Add credentials to DTRS
@@ -203,12 +445,29 @@ def credentials(request):
             log.exception("Failed to add credentials for site %s" % site)
             return HttpResponseServerError()
 
+        # Add image generation credentials to DB
+        if nimbus_user_cert is not None:
+            add_packer_credentials(username=request.user.username, cloud=site, nimbus_user_cert=nimbus_user_cert,
+                    nimbus_user_key=nimbus_user_key, nimbus_canonical_id=nimbus_canonical_id)
+
+        if openstack_username is not None:
+            add_packer_credentials(username=request.user.username, cloud=site, openstack_username=openstack_username,
+                    openstack_password=openstack_password, openstack_project=openstack_project)
+
+        response_dict["nimbus_user_cert"] = nimbus_user_cert
+        response_dict["nimbus_user_key"] = nimbus_user_key
+        response_dict["nimbus_canonical_id"] = nimbus_canonical_id
+        response_dict["openstack_username"] = openstack_username
+        response_dict["openstack_password"] = openstack_password
+        response_dict["openstack_project"] = openstack_project
+
         h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
 
     return h
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "PUT", "DELETE"])
 def credentials_resource(request, site):
     user_obj = get_user_object(request.user.username)
@@ -226,7 +485,7 @@ def credentials_resource(request, site):
                 "access_key": cloud.iaas_key,
                 "secret_key": cloud.iaas_secret,
                 "key_name": cloud.keyname,
-                "uri": "/api/%s/credentials/%s" % (API_VERSION, cloud.cloudname)
+                "uri": "/api/%s/credentials/sites/%s" % (API_VERSION, cloud.cloudname)
             }
             if details is True:
                 response_dict["available_keys"] = keys[cloud.cloudname]
@@ -264,7 +523,7 @@ def credentials_resource(request, site):
             "access_key": access_key,
             "secret_key": secret_key,
             "key_name": key_name,
-            "uri": "/api/%s/credentials/%s" % (API_VERSION, site)
+            "uri": "/api/%s/credentials/sites/%s" % (API_VERSION, site)
         }
 
         # Add credentials to DTRS
@@ -274,7 +533,7 @@ def credentials_resource(request, site):
             log.exception("Failed to add credentials for site %s" % site)
             return HttpResponseServerError()
 
-        h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
+        h = HttpResponse(json.dumps(response_dict), mimetype='application/javascript')
     elif request.method == "DELETE":
         # Check that credentials exist
         clouds = user_obj.get_clouds()
@@ -295,6 +554,7 @@ def credentials_resource(request, site):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "POST"])
 def launchconfigurations(request):
     if request.method == "GET":
@@ -314,36 +574,84 @@ def launchconfigurations(request):
     elif request.method == "POST":
         try:
             content = json.loads(request.body)
-        except Exception as e:
-            return HttpResponseBadRequest("Could not load JSON from %s: %s" % (request.body, e))
+        except:
+            return HttpResponseBadRequest("Couldn't load json from body")
 
-        required_params = ["name", "cloud_params"]
+        required_params = ['name', 'cloud_params']
         if not has_all_required_params(required_params, content):
-            return HttpResponseBadRequest()
+            return HttpResponseBadRequest("Request must have %s params" % ", ".join(required_params))
         name = content['name']
         cloud_params = content['cloud_params']
         username = request.user.username
+
+        required_cloud_params = ['image_id', 'instance_type', 'max_vms', 'common', 'rank']
+        for cloud_name, cloud_p in cloud_params.iteritems():
+            if not has_all_required_params(required_cloud_params, cloud_p):
+                missing = list(set(required_params) - set(cloud_p))
+                return HttpResponseBadRequest("Missing parameters. %s needs: %s." % (
+                    cloud_name, ", ".join(missing)))
+
+        if re.search("^%s+$" % ACCEPTED_RESOURCE_PATTERN, name) is None:
+            return HttpResponseBadRequest("%s isn't an acceptable id. Must match %s" % (
+                name, ACCEPTED_RESOURCE_PATTERN))
 
         lc = get_launch_configuration_by_name(username, name)
         if lc is not None:
             # LC already exists, redirect to existing one
             return HttpResponseRedirect("/api/%s/launchconfigurations/%s" % (API_VERSION, lc.id))
 
-        lc = create_launch_configuration(username, name, cloud_params)
+        contextualization_method = content.get('contextualization_method', 'None')
+        user_data = content.get('user_data')
+        chef_runlist = content.get('chef_runlist')
+        chef_attributes = content.get('chef_attributes')
+        appliance = content.get('appliance')
+
+        if (contextualization_method is 'none' and
+                (user_data, chef_runlist, chef_attributes) is not (None, None, None)):
+            msg = "Your contextualization_method is 'none', but you have provided "
+            "'user_data', 'chef_runlist' or 'chef_attributes'?"
+            return HttpResponseBadRequest(msg)
+        elif (contextualization_method is 'user_data' and
+                (chef_runlist, chef_attributes) is not (None, None)):
+            msg = "Your contextualization_method is 'user_data', but you have provided "
+            "'chef_runlist' or 'chef_attributes'?"
+            return HttpResponseBadRequest(msg)
+        elif contextualization_method is 'chef' and user_data is not None:
+            msg = "Your contextualization_method is 'chef', but you have provided "
+            "'user_data'?"
+            return HttpResponseBadRequest(msg)
+
+        context_params = {
+            'contextualization_method': contextualization_method,
+            'user_data': user_data,
+            'chef_runlist': chef_runlist,
+            'chef_attributes': chef_attributes,
+        }
+
+        lc = create_launch_configuration(username, name, cloud_params, context_params, appliance)
 
         response_dict = {
             "id": lc.id,
             "name": name,
             "owner": username,
+            'appliance': appliance,
+            'contextualization_method': contextualization_method,
             "cloud_params": cloud_params,
             "uri": "/api/%s/launchconfigurations/%s" % (API_VERSION, lc.id),
         }
+
+        if contextualization_method == "user_data":
+            response_dict['user_data'] = content.get('user_data')
+        elif contextualization_method == "chef":
+            response_dict['chef_runlist'] = content.get('chef_runlist')
+            response_dict['chef_attributes'] = content.get('chef_attributes')
 
         h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
     return h
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "PUT", "DELETE"])
 def launchconfiguration_resource(request, id):
     if request.method == "GET":
@@ -368,7 +676,7 @@ def launchconfiguration_resource(request, id):
         except:
             return HttpResponseBadRequest()
 
-        required_params = ["name", "cloud_params"]
+        required_params = ['name', 'cloud_params']
         if not has_all_required_params(required_params, content):
             return HttpResponseBadRequest()
 
@@ -381,8 +689,43 @@ def launchconfiguration_resource(request, id):
                 return HttpResponseBadRequest("Missing parameters. %s needs: %s." % (
                     cloud_name, ", ".join(missing)))
 
-        response_dict = update_launch_configuration(lc.id, cloud_params)
+        contextualization_method = content.get('contextualization_method', 'none')
+        user_data = content.get('user_data')
+        chef_runlist = content.get('chef_runlist')
+        chef_attributes = content.get('chef_attributes')
+        appliance = content.get('appliance')
+
+        if (contextualization_method is 'none' and
+                (user_data, chef_runlist, chef_attributes) is not (None, None, None)):
+            msg = "Your contextualization_method is 'none', but you have provided "
+            "'user_data', 'chef_runlist' or 'chef_attributes'?"
+            return HttpResponseBadRequest(msg)
+        elif (contextualization_method is 'user_data' and
+                (chef_runlist, chef_attributes) is not (None, None)):
+            msg = "Your contextualization_method is 'user_data', but you have provided "
+            "'chef_runlist' or 'chef_attributes'?"
+            return HttpResponseBadRequest(msg)
+        elif contextualization_method is 'chef' and user_data is not None:
+            msg = "Your contextualization_method is 'chef', but you have provided "
+            "'user_data'?"
+            return HttpResponseBadRequest(msg)
+
+        context_params = {
+            'contextualization_method': contextualization_method,
+            'user_data': content.get('user_data'),
+            'chef_runlist': content.get('chef_runlist'),
+            'chef_attributes': content.get('chef_attributes')
+        }
+
+        response_dict = update_launch_configuration(lc.id, cloud_params, context_params, appliance)
         response_dict['uri'] = "/api/%s/launchconfigurations/%s" % (API_VERSION, lc.id)
+        response_dict['contextualization_method'] = contextualization_method
+
+        if contextualization_method == "user_data":
+            response_dict['user_data'] = user_data
+        elif contextualization_method == "chef":
+            response_dict['chef_runlist'] = chef_runlist
+            response_dict['chef_attributes'] = chef_attributes
 
         h = HttpResponse(json.dumps(response_dict), status=200, mimetype='application/javascript')
         return h
@@ -399,6 +742,7 @@ def launchconfiguration_resource(request, id):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "POST"])
 def domains(request):
     if request.method == "GET":
@@ -436,6 +780,7 @@ def domains(request):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "PUT", "DELETE"])
 def domain_resource(request, id):
     if request.method == "GET":
@@ -483,6 +828,7 @@ def domain_resource(request, id):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET"])
 def instances(request, domain_id):
     if request.method == "GET":
@@ -501,6 +847,7 @@ def instances(request, domain_id):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET", "DELETE"])
 def instance_resource(request, domain_id, instance_id):
     if request.method == "GET":
@@ -558,6 +905,7 @@ def instance_resource(request, domain_id, instance_id):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET"])
 def sensors(request):
     if request.method == "GET":
@@ -576,6 +924,7 @@ def sensors(request):
 
 
 @token_or_logged_in_required
+@optional_pretty_print
 @require_http_methods(["GET"])
 def sensor_resource(request, sensor_id):
     if request.method == "GET":
@@ -591,3 +940,182 @@ def sensor_resource(request, sensor_id):
         }
 
         return HttpResponse(json.dumps(sensor), mimetype='application/javascript')
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "POST"])
+def imagegenerators(request):
+    if request.method == "GET":
+        username = request.user.username
+        imagegenerators = get_all_image_generators(username)
+        response = []
+        for ig_id in imagegenerators:
+            ig_dict = get_image_generator(ig_id)
+            ig_dict['uri'] = "/api/%s/imagegenerators/%s" % (API_VERSION, ig_dict.get('id'))
+            response.append(ig_dict)
+
+        h = HttpResponse(json.dumps(response), status=200, mimetype='application/javascript')
+        return h
+    elif request.method == "POST":
+        try:
+            content = json.loads(request.body)
+        except:
+            return HttpResponseBadRequest()
+        username = request.user.username
+        name = content.get('name')
+        cloud_params = content.get('cloud_params')
+        script = content.get('script')
+
+        if name is None:
+            return HttpResponseBadRequest("You must provide a name for your image generator")
+        if cloud_params is None:
+            return HttpResponseBadRequest("You must provide cloud parameters for your image generator")
+
+        imagegenerator = get_image_generator_by_name(username, name)
+        if imagegenerator is not None:
+            # image generator already exists, redirect to existing one
+            return HttpResponseRedirect("/api/%s/imagegenerators/%s" % (API_VERSION, imagegenerator.id))
+
+        try:
+            image_generator = create_image_generator(username, name, cloud_params, script)
+        except PhantomWebException as p:
+            return HttpResponseBadRequest(p.message)
+
+        response_dict = {
+            "id": image_generator.id,
+            "name": name,
+            "owner": username,
+            "uri": "/api/%s/imagegenerators/%s" % (API_VERSION, image_generator.id)
+        }
+
+        h = HttpResponse(json.dumps(response_dict), status=201, mimetype='application/javascript')
+        return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "PUT", "DELETE"])
+def imagegenerator_resource(request, id):
+    if request.method == "GET":
+        image_generator = get_image_generator(id)
+        if image_generator is not None and image_generator.get('owner') == request.user.username:
+            image_generator['uri'] = "/api/%s/imagegenerators/%s" % (API_VERSION, image_generator.get('id'))
+            return HttpResponse(json.dumps(image_generator), mimetype='application/javascript')
+        else:
+            return HttpResponseNotFound('Image generator %s not found' % id, mimetype='application/javascript')
+
+    elif request.method == "PUT":
+        username = request.user.username
+        response = get_image_generator(id)
+        if response is None or response.get('owner') != username:
+            return HttpResponseNotFound('Image generator %s not found' % id, mimetype='application/javascript')
+
+        try:
+            content = json.loads(request.body)
+        except:
+            return HttpResponseBadRequest()
+
+        try:
+            response = modify_image_generator(id, content)
+        except PhantomWebException as p:
+            return HttpResponseBadRequest(p.message)
+
+        response['uri'] = "/api/%s/imagegenerators/%s" % (API_VERSION, response['id'])
+
+        h = HttpResponse(json.dumps(response), status=200, mimetype='application/javascript')
+        return h
+
+    elif request.method == "DELETE":
+        username = request.user.username
+        image_generator = get_image_generator(id)
+        if image_generator is not None and image_generator.get('owner') == request.user.username:
+            remove_image_generator(id)
+            h = HttpResponse(status=204)
+        else:
+            h = HttpResponseNotFound('Image generator %s not found' % id, mimetype='application/javascript')
+        return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "POST"])
+def image_builds(request, image_generator_id):
+    username = request.user.username
+    image_generator = get_image_generator(image_generator_id)
+    if image_generator is None:
+        # image generator does not exists, so return 404
+        return HttpResponseNotFound('Image generator %s not found' % image_generator_id, mimetype='application/javascript')
+
+    if request.method == "GET":
+        image_builds = get_all_image_builds(username, image_generator_id)
+        response = []
+        for ib_id in image_builds:
+            ib_dict = get_image_build(username, ib_id)
+            ib_dict['uri'] = "/api/%s/imagegenerators/%s/builds/%s" % (API_VERSION, image_generator["id"], ib_dict.get('id'))
+            response.append(ib_dict)
+
+        h = HttpResponse(json.dumps(response), status=200, mimetype='application/javascript')
+        return h
+    elif request.method == "POST":
+        try:
+            content = json.loads(request.body)
+            credentials = content.get("credentials", {})
+        except:
+            return HttpResponseBadRequest()
+
+        try:
+            image_build = create_image_build(username, image_generator, additional_credentials=credentials)
+        except PhantomWebException as p:
+            return HttpResponseBadRequest(p.message)
+
+        image_build["owner"] = username
+        image_build["uri"] = "/api/%s/imagegenerators/%s/builds/%s" % (API_VERSION, image_generator["id"], image_build["id"])
+
+        h = HttpResponse(json.dumps(image_build), status=201, mimetype='application/javascript')
+        return h
+
+
+@token_or_logged_in_required
+@optional_pretty_print
+@require_http_methods(["GET", "PUT", "DELETE"])
+def image_build_resource(request, image_generator_id, build_id):
+    username = request.user.username
+    image_generator = get_image_generator(image_generator_id)
+    if image_generator is None or image_generator.get('owner') != request.user.username:
+        return HttpResponseNotFound('Image generator %s not found' % image_generator_id, mimetype='application/javascript')
+
+    if request.method == "GET":
+        image_build = get_image_build(username, build_id)
+        if image_build is None:
+            return HttpResponseNotFound('Image build %s not found' % build_id, mimetype='application/javascript')
+        image_build['uri'] = "/api/%s/imagegenerators/%s/builds/%s" % (API_VERSION, image_generator["id"], image_build.get('id'))
+        return HttpResponse(json.dumps(image_build), mimetype='application/javascript')
+
+    elif request.method == "PUT":
+        response = get_image_generator(image_generator_id)
+        if response is None or response.get('owner') != username:
+            return HttpResponseNotFound('Image generator %s not found' % image_generator_id, mimetype='application/javascript')
+
+        try:
+            content = json.loads(request.body)
+        except:
+            return HttpResponseBadRequest()
+
+        try:
+            response = modify_image_generator(image_generator_id, content)
+        except PhantomWebException as p:
+            return HttpResponseBadRequest(p.message)
+
+        response['uri'] = "/api/%s/imagegenerators/%s" % (API_VERSION, response['id'])
+
+        h = HttpResponse(json.dumps(response), status=200, mimetype='application/javascript')
+        return h
+
+    elif request.method == "DELETE":
+        image_build = get_image_build(username, build_id)
+        if image_build is None:
+            h = HttpResponseNotFound('Image build %s not found' % build_id, mimetype='application/javascript')
+
+        remove_image_build(username, build_id)
+        return HttpResponse(status=204)
